@@ -1,0 +1,174 @@
+@import "tailwindcss";
+
+:root {
+  /* ─── Peak Design Color Tokens ─── */
+  --color-carbon-ink: #1a211e;
+  --color-paper-white: #ffffff;
+  --color-true-black: #000000;
+  --color-obsidian: #0c0c0c;
+  --color-fog: #eef1f0;
+  --color-mist: #e0e0e0;
+  --color-graphite: #606562;
+  --color-ash-border: #cccfcd;
+  --color-slate-pd: #363537;
+  --color-pewter: #4e4e4e;
+  --color-ember-red: #cc2e39;
+
+  /* ─── Surfaces ─── */
+  --surface-canvas: #ffffff;
+  --surface-soft-card: #eef1f0;
+  --surface-hairline: #e0e0e0;
+  --surface-deep-panel: #0c0c0c;
+
+  /* ─── Typography ─── */
+  --font-display: var(--font-playfair), 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-body: var(--font-geist-sans), 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  /* ─── Type Scale ─── */
+  --text-caption: 14px;
+  --text-button-label: 16px;
+  --text-heading-sm: 24px;
+  --text-heading: 32px;
+  --text-heading-lg: 48px;
+  --text-display: 80px;
+
+  /* ─── Spacing ─── */
+  --spacing-4: 4px;
+  --spacing-8: 8px;
+  --spacing-12: 12px;
+  --spacing-16: 16px;
+  --spacing-20: 20px;
+  --spacing-24: 24px;
+  --spacing-32: 32px;
+  --spacing-40: 40px;
+  --spacing-48: 48px;
+  --spacing-64: 64px;
+
+  /* ─── Layout ─── */
+  --page-max-width: 1440px;
+  --section-gap: 80px;
+  --card-padding: 24px;
+  --element-gap: 24px;
+
+  /* ─── Radii ─── */
+  --radius-nav: 4px;
+  --radius-cards: 8px;
+  --radius-badges: 9999px;
+  --radius-images: 8px;
+  --radius-inputs: 4px;
+  --radius-buttons: 4px;
+  --radius-buttons-rounded: 32px;
+
+  --background: #ffffff;
+  --foreground: #1a211e;
+}
+
+/* ─── Tailwind v4 Theme Tokens ─── */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* Peak Design palette */
+  --color-carbon-ink: #1a211e;
+  --color-paper-white: #ffffff;
+  --color-obsidian: #0c0c0c;
+  --color-fog: #eef1f0;
+  --color-mist: #e0e0e0;
+  --color-graphite: #606562;
+  --color-ash-border: #cccfcd;
+  --color-slate-pd: #363537;
+  --color-pewter: #4e4e4e;
+  --color-ember-red: #cc2e39;
+
+  /* Backwards-compat aliases for inner pages */
+  --color-b2w-navy: #1a211e;
+  --color-b2w-brand: #1a211e;
+  --color-b2w-brand-dark: #0c0c0c;
+  --color-b2w-green: #10b981;
+  --color-b2w-red: #ef4444;
+  --color-b2w-body: #606562;
+  --color-b2w-muted: #606562;
+  --color-b2w-border: #e0e0e0;
+  --color-b2w-bg: #ffffff;
+  --color-brand-blue: #1a211e;
+  --color-brand-red: #cc2e39;
+  --color-b2w-teal: #1a211e;
+  --color-b2w-dark-teal: #0c0c0c;
+  --color-hairline: #e0e0e0;
+  --color-soft-canvas: #eef1f0;
+  --color-ink-black: #1a211e;
+  --color-slate: #606562;
+  --color-green: #10b981;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-playfair), 'Playfair Display', Georgia, serif;
+}
+
+/* ─── Focus Visible ─── */
+*:focus-visible {
+  outline: 2px solid var(--color-carbon-ink);
+  outline-offset: 2px;
+}
+
+/* ─── Reduced Motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Base Body ─── */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ─── Utility: Label Text (Bryant-like uppercase) ─── */
+.label-text {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.057em;
+}
+
+.label-text-sm {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.038em;
+  font-size: 14px;
+}
+
+/* ─── Utility: Display Serif ─── */
+.display-serif {
+  font-family: var(--font-playfair), 'Playfair Display', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.10;
+}
+
+/* ─── Animations ─── */
+@keyframes toastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-12px); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+@keyframes fadeSlideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes fadeSlideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+.horizontal-scroll::-webkit-scrollbar { display: none; }
+
+/* ─── Scrollbar hide utility ─── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

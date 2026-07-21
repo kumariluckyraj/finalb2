@@ -1,0 +1,41 @@
+{
+  "name": "ecommerce",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node --max-old-space-size=4096 node_modules/next/dist/bin/next dev",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "lint": "eslint",
+    "db:pg:schema": "tsx postgres/scripts/apply-schema.ts",
+    "db:pg:seller-schema": "tsx postgres/scripts/apply-seller-schema.ts",
+    "db:pg:seed": "tsx postgres/scripts/seed.ts",
+    "db:pg:sync-seller-products": "tsx postgres/scripts/sync-seller-products.ts",
+    "db:pg:setup": "npm run db:pg:schema && npm run db:pg:seed && npm run db:pg:seller-schema"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.10.0",
+    "dotenv": "^17.2.1",
+    "jose": "^6.2.3",
+    "lucide-react": "^1.17.0",
+    "next": "^16.2.9",
+    "pg": "^8.21.0",
+    "razorpay": "^2.9.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "twilio": "^6.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "^4",
+    "tsx": "^4.20.5",
+    "typescript": "^5"
+  }
+}
