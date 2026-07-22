@@ -56,13 +56,15 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { sellerOrderId, orderId, reason, description } = body;
+  const { sellerOrderId, orderId, reason, description, resolutionType } = body;
 
-  if (!orderId || !reason) {
-    return NextResponse.json({ error: "orderId and reason required" }, { status: 400 });
+  if (!orderId || !reason || !resolutionType) {
+    return NextResponse.json({ error: "orderId, reason, and resolutionType required" }, { status: 400 });
+  }
+  if (!["refund", "replacement"].includes(resolutionType)) {
+    return NextResponse.json({ error: "resolutionType must be 'refund' or 'replacement'" }, { status: 400 });
   }
 
-  // Look up seller order ID if not provided
   let soId = sellerOrderId;
   if (!soId) {
     const { rows: soRows } = await query<{ id: string }>(
@@ -75,7 +77,6 @@ export async function POST(req: NextRequest) {
     soId = soRows[0].id;
   }
 
-  // Verify this order belongs to the user
   const { rows } = await query<{ id: string; seller_id: string; user_id: string }>(
     `SELECT so.id, so.seller_id, o.user_id
      FROM seller_orders so
@@ -94,6 +95,7 @@ export async function POST(req: NextRequest) {
     buyerId: user.userId,
     reason,
     description,
+    resolutionType,
   });
 
   return NextResponse.json({ success: true, return: ret }, { status: 201 });

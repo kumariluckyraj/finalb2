@@ -1,204 +1,275 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-700",
-  approved: "bg-green-100 text-green-700",
-  rejected: "bg-red-100 text-red-700",
-  picked_up: "bg-blue-100 text-blue-700",
-  refunded: "bg-purple-100 text-purple-700",
+const STEP_DEFS = [
+  { key: "pending", label: "Return Requested" },
+  { key: "under_review", label: "Return Request Under Review" },
+  { key: "approved", label: "Return Approved", altKey: "rejected", altLabel: "Return Rejected" },
+  { key: "pickup_scheduled", label: "Pickup Scheduled" },
+  { key: "pickup_completed", label: "Pickup Completed" },
+  { key: "in_transit", label: "Item In Transit" },
+  { key: "received", label: "Item Received by Vendor" },
+  { key: "inspection", label: "Quality Inspection" },
+  { key: "inspection_passed", label: "Return Accepted", altKey: "inspection_failed", altLabel: "Return Rejected" },
+  { key: "resolution_initiated", label: "Refund Initiated / Replacement Approved" },
+  { key: "resolved", label: "Refund Completed / Replacement Delivered" },
+];
+
+const STATUS_INDEX: Record<string, number> = {
+  pending: 0, under_review: 1, approved: 2, rejected: 2,
+  pickup_scheduled: 3, pickup_completed: 4, in_transit: 5, received: 6,
+  inspection: 7, inspection_passed: 8, inspection_failed: 8,
+  resolution_initiated: 9, resolved: 10,
+};
+const REJECTED_STATUSES = new Set(["rejected", "inspection_failed"]);
+
+const b2w = {
+  navy: "#1a211e", green: "#10b981", red: "#ef4444",
+  muted: "#94a3b8", border: "#e0e0e0", bg: "#f8f9f8", white: "#ffffff",
+  cardShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)",
 };
 
 export default function ReturnsPage() {
   const [returns, setReturns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pickupForm, setPickupForm] = useState<Record<string, { address: string; date: string; notes: string }>>({});
-  const [refundAmounts, setRefundAmounts] = useState<Record<string, number>>({});
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const load = () => {
+  // Small inline inputs, keyed by return id, only used at the moment they're needed
+  const [pickupForm, setPickupForm] = useState<Record<string, { address: string; date: string; notes: string }>>({});
+  const [transitForm, setTransitForm] = useState<Record<string, { trackingNumber: string; courier: string }>>({});
+  const [inspectionNotes, setInspectionNotes] = useState<Record<string, string>>({});
+  const [refundAmounts, setRefundAmounts] = useState<Record<string, number>>({});
+
+  const load = () =>
     fetch("/api/seller/returns").then(r => r.json()).then(d => { setReturns(d.returns || []); setLoading(false); });
-  };
 
   useEffect(() => { load(); }, []);
 
-  const handleAction = async (id: string, status: string, refundAmount?: number) => {
+  const patch = async (id: string, body: Record<string, any>) => {
+    setBusy(id);
     await fetch(`/api/seller/returns/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, refundAmount }),
+      body: JSON.stringify(body),
     });
-    load();
+    await load();
+    setBusy(null);
   };
 
-  const handleSchedulePickup = async (id: string) => {
+  const schedulePickup = async (id: string) => {
     const pf = pickupForm[id];
     if (!pf?.address || !pf?.date) return;
+    setBusy(id);
     await fetch("/api/seller/returns/pickup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ returnId: id, pickupAddress: pf.address, pickupDate: pf.date, pickupNotes: pf.notes }),
     });
     setPickupForm(prev => ({ ...prev, [id]: { address: "", date: "", notes: "" } }));
-    load();
+    await load();
+    setBusy(null);
   };
 
-  if (loading) return <div className="flex items-center justify-center h-48"><div className="w-6 h-6 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" /></div>;
-
-  const pendingCount = returns.filter(r => r.status === "pending").length;
-  const needsRefundCount = returns.filter(r => r.status === "approved" || r.status === "picked_up").length;
+  if (loading) return (
+    <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 40, height: 40, border: `4px solid ${b2w.border}`, borderTopColor: b2w.navy, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+    </div>
+  );
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Return Requests</h1>
+    <div style={{ color: b2w.navy }}>
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Return Requests</h1>
+      <p style={{ fontSize: 13, color: b2w.muted, marginBottom: 20 }}>{returns.length} total return requests</p>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-yellow-50 rounded-xl p-4">
-          <p className="text-xs text-yellow-600 mb-1">Pending</p>
-          <p className="text-2xl font-bold text-yellow-700">{pendingCount}</p>
-        </div>
-        <div className="bg-blue-50 rounded-xl p-4">
-          <p className="text-xs text-blue-600 mb-1">Need Refund</p>
-          <p className="text-2xl font-bold text-blue-700">{needsRefundCount}</p>
-        </div>
-        <div className="bg-gray-50 rounded-xl p-4">
-          <p className="text-xs text-gray-600 mb-1">Total Requests</p>
-          <p className="text-2xl font-bold text-gray-700">{returns.length}</p>
-        </div>
-      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {returns.length === 0 && (
+          <div style={{ background: b2w.white, borderRadius: 12, boxShadow: b2w.cardShadow, padding: 48, textAlign: "center", color: b2w.muted }}>
+            No return requests yet.
+          </div>
+        )}
 
-      {returns.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-100">No return requests</div>
-      ) : (
-        <div className="space-y-3">
-          {returns.map(r => (
-            <div key={r.id} className="bg-white rounded-xl p-4 border border-gray-100">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_COLORS[r.status]}`}>{r.status}</span>
-                    {r.refundStatus !== "pending" && r.status !== "pending" && (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                        r.refundStatus === "completed" ? "bg-green-100 text-green-700" :
-                        r.refundStatus === "processing" ? "bg-blue-100 text-blue-700" :
-                        r.refundStatus === "failed" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"
-                      }`}>Refund: {r.refundStatus}</span>
-                    )}
-                    {r.refundAmount && <span className="text-xs font-medium text-gray-500">₹{r.refundAmount}</span>}
+        {returns.map(r => {
+          const isBusy = busy === r.id;
+          const currentIdx = STATUS_INDEX[r.status] ?? 0;
+          const isRejectedTerminal = REJECTED_STATUSES.has(r.status);
+
+          return (
+            <div key={r.id} style={{ background: b2w.white, borderRadius: 12, boxShadow: b2w.cardShadow, overflow: "hidden" }}>
+
+              {/* Header */}
+              <div style={{ padding: "16px 20px", borderBottom: `1px solid ${b2w.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>{r.reason}</p>
+                    {r.description && <p style={{ margin: "2px 0 0", fontSize: 12, color: b2w.muted }}>{r.description}</p>}
                   </div>
-                  <p className="text-sm text-gray-700 mt-1 font-medium">{r.reason}</p>
-                  {r.description && <p className="text-xs text-gray-400 mt-0.5">{r.description}</p>}
-
-                  {/* Pickup info */}
-                  {r.pickupAddress && (
-                    <div className="mt-2 p-2 bg-blue-50 rounded-lg text-xs">
-                      <p className="text-blue-700 font-medium">Pickup scheduled</p>
-                      <p className="text-blue-600">{r.pickupAddress}</p>
-                      {r.pickupScheduledAt && <p className="text-blue-500">{new Date(r.pickupScheduledAt).toLocaleString()}</p>}
-                      {r.pickupNotes && <p className="text-blue-500">Note: {r.pickupNotes}</p>}
-                    </div>
-                  )}
-
-                  {/* Timeline */}
-                  {r.timeline?.length > 0 && (
-                    <button
-                      onClick={() => setExpanded(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
-                      className="mt-2 text-xs text-purple-600 hover:underline bg-transparent border-none cursor-pointer"
-                    >
-                      {expanded[r.id] ? "Hide" : "Show"} timeline ({r.timeline.length} events)
-                    </button>
-                  )}
-                  {expanded[r.id] && r.timeline?.length > 0 && (
-                    <div className="mt-1 space-y-1">
-                      {r.timeline.map((t: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 text-[11px] text-gray-400">
-                          <span className="w-2 h-2 rounded-full bg-gray-300" />
-                          <span className="capitalize">{t.status}</span>
-                          <span>{new Date(t.timestamp).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div className="flex flex-col gap-2 ml-4 shrink-0">
-                  {r.status === "pending" && (
-                    <>
-                      <button onClick={() => handleAction(r.id, "approved")} className="px-3 py-1.5 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 border-none cursor-pointer">Approve</button>
-                      <button onClick={() => handleAction(r.id, "rejected")} className="px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 border-none cursor-pointer">Reject</button>
-                    </>
-                  )}
-                  {r.status === "approved" && (
-                    <>
-                      {/* Schedule pickup */}
-                      <button
-                        onClick={() => {
-                          const pf = pickupForm[r.id];
-                          if (pf?.address) {
-                            handleSchedulePickup(r.id);
-                          } else {
-                            setPickupForm(prev => ({ ...prev, [r.id]: { address: "", date: "", notes: "" } }));
-                          }
-                        }}
-                        className="px-3 py-1.5 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 border-none cursor-pointer"
-                      >
-                        {pickupForm[r.id]?.address ? "Schedule Pickup" : "Pickup"}
-                      </button>
-                      {pickupForm[r.id] !== undefined && !pickupForm[r.id]?.address && (
-                        <div className="flex flex-col gap-1 mt-1">
-                          <input
-                            placeholder="Pickup address"
-                            value={pickupForm[r.id]?.address || ""}
-                            onChange={e => setPickupForm(prev => ({ ...prev, [r.id]: { ...prev[r.id], address: e.target.value } }))}
-                            className="w-48 px-2 py-1 text-xs border border-gray-200 rounded"
-                          />
-                          <input
-                            type="datetime-local"
-                            value={pickupForm[r.id]?.date || ""}
-                            onChange={e => setPickupForm(prev => ({ ...prev, [r.id]: { ...prev[r.id], date: e.target.value } }))}
-                            className="w-48 px-2 py-1 text-xs border border-gray-200 rounded"
-                          />
-                          <input
-                            placeholder="Pickup notes (optional)"
-                            value={pickupForm[r.id]?.notes || ""}
-                            onChange={e => setPickupForm(prev => ({ ...prev, [r.id]: { ...prev[r.id], notes: e.target.value } }))}
-                            className="w-48 px-2 py-1 text-xs border border-gray-200 rounded"
-                          />
-                          <button
-                            onClick={() => handleSchedulePickup(r.id)}
-                            className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 border-none cursor-pointer"
-                          >
-                            Confirm Pickup
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {(r.status === "picked_up" || r.status === "approved") && (
-                    <div className="flex flex-col gap-1">
-                      <input
-                        type="number"
-                        placeholder={r.refundAmount ? `₹${r.refundAmount}` : "Refund amount"}
-                        value={refundAmounts[r.id] ?? ""}
-                        onChange={e => setRefundAmounts(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
-                        className="w-28 px-2 py-1 text-xs border border-gray-200 rounded"
-                      />
-                      <button
-                        onClick={() => handleAction(r.id, "refunded", refundAmounts[r.id] || r.refundAmount || 0)}
-                        className="px-3 py-1.5 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 border-none cursor-pointer"
-                      >
-                        Mark Refunded
-                      </button>
-                    </div>
-                  )}
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                    {r.resolutionType && (
+                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: "capitalize", background: "#f1f5f9", color: "#475569", padding: "3px 10px", borderRadius: 20 }}>
+                        {r.resolutionType}
+                      </span>
+                    )}
+                    {r.refundAmount && <span style={{ fontSize: 12, color: b2w.muted }}>₹{r.refundAmount}</span>}
+                  </div>
                 </div>
               </div>
+
+              {/* Stepper */}
+              <div style={{ padding: "18px 20px" }}>
+                {STEP_DEFS.map((step, i) => {
+                  const done = i < currentIdx || (i === currentIdx && !isRejectedTerminal && r.status !== step.key ? false : i <= currentIdx);
+                  const isCurrentDone = i === currentIdx;
+                  const isLast = i === STEP_DEFS.length - 1;
+                  const showAsRejected = isCurrentDone && isRejectedTerminal && !!step.altKey;
+                  const label = showAsRejected ? step.altLabel : step.label;
+
+                  const stepDone = i < currentIdx || (i === currentIdx);
+                  const stepColor = isCurrentDone && isRejectedTerminal ? b2w.red : b2w.green;
+
+                  return (
+                    <div key={step.key} style={{ display: "flex", gap: 12, position: "relative" }}>
+                      {!isLast && (
+                        <div style={{ position: "absolute", left: 10, top: 26, width: 2, height: "calc(100% - 6px)", background: i < currentIdx ? b2w.green : b2w.border }} />
+                      )}
+                      <div style={{
+                        width: 22, height: 22, borderRadius: "50%", flexShrink: 0, zIndex: 1, marginTop: 3,
+                        background: stepDone ? stepColor : "#f5f5f5",
+                        border: `2px solid ${stepDone ? stepColor : b2w.border}`,
+                      }} />
+                      <div style={{ flex: 1, paddingBottom: isLast ? 0 : 22 }}>
+                        <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 600, color: stepDone ? b2w.navy : "#bdbdbd" }}>
+                          {label}
+                        </p>
+
+                        {/* Extra detail once this step is reached */}
+                        {step.key === "pickup_scheduled" && i <= currentIdx && r.pickupAddress && (
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: b2w.muted }}>
+                            {r.pickupAddress} {r.pickupScheduledAt && `· ${new Date(r.pickupScheduledAt).toLocaleString("en-IN")}`}
+                          </p>
+                        )}
+                        {step.key === "in_transit" && i <= currentIdx && r.returnTrackingNumber && (
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: b2w.muted }}>
+                            {r.returnCourier ? `${r.returnCourier}: ` : ""}{r.returnTrackingNumber}
+                          </p>
+                        )}
+                        {step.key === "inspection" && i <= currentIdx && r.inspectionNotes && (
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: b2w.muted }}>{r.inspectionNotes}</p>
+                        )}
+
+                        {/* Action panel — only rendered at the current, non-terminal step */}
+                        {isCurrentDone && !isRejectedTerminal && r.status !== "resolved" && (
+                          <div style={{ marginTop: 10 }}>
+
+                            {r.status === "pending" && (
+                              <button disabled={isBusy} onClick={() => patch(r.id, { action: "review" })}
+                                style={btnStyle("#fef3c7", "#92400e")}>Start Review</button>
+                            )}
+
+                            {r.status === "under_review" && (
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button disabled={isBusy} onClick={() => patch(r.id, { action: "approve" })}
+                                  style={btnStyle("#dcfce7", "#15803d")}>Approve</button>
+                                <button disabled={isBusy} onClick={() => patch(r.id, { action: "reject", reason: "Return rejected by seller after review" })}
+                                  style={btnStyle("#fee2e2", "#b91c1c")}>Reject</button>
+                              </div>
+                            )}
+
+                            {r.status === "approved" && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 280 }}>
+                                <input placeholder="Pickup address" value={pickupForm[r.id]?.address || ""}
+                                  onChange={e => setPickupForm(prev => ({ ...prev, [r.id]: { ...prev[r.id], address: e.target.value, date: prev[r.id]?.date || "", notes: prev[r.id]?.notes || "" } }))}
+                                  style={inputStyle} />
+                                <input type="datetime-local" value={pickupForm[r.id]?.date || ""}
+                                  onChange={e => setPickupForm(prev => ({ ...prev, [r.id]: { ...prev[r.id], date: e.target.value, address: prev[r.id]?.address || "", notes: prev[r.id]?.notes || "" } }))}
+                                  style={inputStyle} />
+                                <button disabled={isBusy} onClick={() => schedulePickup(r.id)} style={btnStyle("#ffedd5", "#c2410c")}>
+                                  Confirm Pickup Schedule
+                                </button>
+                              </div>
+                            )}
+
+                            {r.status === "pickup_scheduled" && (
+                              <button disabled={isBusy} onClick={() => patch(r.id, { action: "pickup_completed" })}
+                                style={btnStyle("#ffedd5", "#c2410c")}>Mark Pickup Completed</button>
+                            )}
+
+                            {r.status === "pickup_completed" && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 280 }}>
+                                <input placeholder="Tracking number (optional)" value={transitForm[r.id]?.trackingNumber || ""}
+                                  onChange={e => setTransitForm(prev => ({ ...prev, [r.id]: { trackingNumber: e.target.value, courier: prev[r.id]?.courier || "" } }))}
+                                  style={inputStyle} />
+                                <input placeholder="Courier (optional)" value={transitForm[r.id]?.courier || ""}
+                                  onChange={e => setTransitForm(prev => ({ ...prev, [r.id]: { courier: e.target.value, trackingNumber: prev[r.id]?.trackingNumber || "" } }))}
+                                  style={inputStyle} />
+                                <button disabled={isBusy}
+                                  onClick={() => patch(r.id, { action: "in_transit", trackingNumber: transitForm[r.id]?.trackingNumber, courier: transitForm[r.id]?.courier })}
+                                  style={btnStyle("#cffafe", "#0e7490")}>Mark In Transit</button>
+                              </div>
+                            )}
+
+                            {r.status === "in_transit" && (
+                              <button disabled={isBusy} onClick={() => patch(r.id, { action: "received" })}
+                                style={btnStyle("#dbeafe", "#1d4ed8")}>Mark Received</button>
+                            )}
+
+                            {r.status === "received" && (
+                              <button disabled={isBusy} onClick={() => patch(r.id, { action: "start_inspection" })}
+                                style={btnStyle("#e0e7ff", "#4338ca")}>Start Quality Inspection</button>
+                            )}
+
+                            {r.status === "inspection" && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 280 }}>
+                                <input placeholder="Inspection notes (optional)" value={inspectionNotes[r.id] || ""}
+                                  onChange={e => setInspectionNotes(prev => ({ ...prev, [r.id]: e.target.value }))}
+                                  style={inputStyle} />
+                                <div style={{ display: "flex", gap: 8 }}>
+                                  <button disabled={isBusy} onClick={() => patch(r.id, { action: "inspection_result", passed: true, notes: inspectionNotes[r.id] })}
+                                    style={btnStyle("#ccfbf1", "#0f766e")}>Pass — Accept</button>
+                                  <button disabled={isBusy} onClick={() => patch(r.id, { action: "inspection_result", passed: false, notes: inspectionNotes[r.id] || "Item failed quality inspection" })}
+                                    style={btnStyle("#fee2e2", "#b91c1c")}>Fail — Reject</button>
+                                </div>
+                              </div>
+                            )}
+
+                            {r.status === "inspection_passed" && (
+                              <button disabled={isBusy} onClick={() => patch(r.id, { action: "initiate_resolution" })}
+                                style={btnStyle("#f3e8ff", "#7e22ce")}>
+                                {r.resolutionType === "replacement" ? "Approve Replacement" : "Initiate Refund"}
+                              </button>
+                            )}
+
+                            {r.status === "resolution_initiated" && r.resolutionType === "refund" && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 280 }}>
+                                <input type="number" placeholder={r.refundAmount ? `₹${r.refundAmount}` : "Refund amount"}
+                                  value={refundAmounts[r.id] ?? ""}
+                                  onChange={e => setRefundAmounts(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
+                                  style={inputStyle} />
+                                <button disabled={isBusy}
+                                  onClick={() => patch(r.id, { action: "complete_resolution", refundAmount: refundAmounts[r.id] || r.refundAmount || 0 })}
+                                  style={btnStyle("#f3e8ff", "#7e22ce")}>Mark Refund Completed</button>
+                              </div>
+                            )}
+
+                            {r.status === "resolution_initiated" && r.resolutionType === "replacement" && (
+                              <button disabled={isBusy} onClick={() => patch(r.id, { action: "complete_resolution" })}
+                                style={btnStyle("#f3e8ff", "#7e22ce")}>Mark Replacement Delivered</button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+function btnStyle(bg: string, color: string): React.CSSProperties {
+  return { background: bg, color, border: "none", padding: "7px 14px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer" };
+}
+const inputStyle: React.CSSProperties = { padding: "6px 10px", fontSize: 12, border: "1px solid #e0e0e0", borderRadius: 6 };

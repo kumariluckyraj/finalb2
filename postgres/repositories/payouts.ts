@@ -116,7 +116,30 @@ export async function createPayoutTransaction(input: {
 }
 
 export async function listAllPayouts(status?: string): Promise<(PayoutRecord & { businessName?: string })[]> {
-  let sql = `${payoutSelect} LEFT JOIN seller_profiles sp ON sp.id = payouts.seller_id`;
+  let sql = `
+    SELECT
+      payouts.id,
+      payouts.seller_id AS "sellerId",
+      payouts.period_start AS "periodStart",
+      payouts.period_end AS "periodEnd",
+      payouts.gross_sales AS "grossSales",
+      payouts.total_commission AS "totalCommission",
+      payouts.total_shipping_deductions AS "totalShippingDeductions",
+      payouts.total_taxes AS "totalTaxes",
+      payouts.total_refunds AS "totalRefunds",
+      payouts.net_amount AS "netAmount",
+      payouts.status,
+      payouts.payout_provider AS "payoutProvider",
+      payouts.payout_reference AS "payoutReference",
+      payouts.paid_at AS "paidAt",
+      payouts.invoice_url AS "invoiceUrl",
+      payouts.notes,
+      payouts.created_at AS "createdAt",
+      payouts.updated_at AS "updatedAt",
+      sp.business_name AS "businessName"
+    FROM payouts
+    LEFT JOIN seller_profiles sp ON sp.id = payouts.seller_id
+  `;
   const params: unknown[] = [];
   if (status) {
     sql += ` WHERE payouts.status = $1`;

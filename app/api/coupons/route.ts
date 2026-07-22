@@ -48,7 +48,8 @@ export async function GET(req: NextRequest) {
       discountAmount,
       finalTotal: cartTotal - discountAmount,
     });
-  } catch {
+  }  catch (err) {
+    console.error("GET /api/coupons error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
