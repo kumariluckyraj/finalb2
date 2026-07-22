@@ -2,18 +2,31 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-700",
-  approved: "bg-green-100 text-green-700",
-  rejected: "bg-red-100 text-red-700",
-  picked_up: "bg-blue-100 text-blue-700",
-  refunded: "bg-purple-100 text-purple-700",
+const STEP_DEFS = [
+  { key: "pending", label: "Return Requested" },
+  { key: "under_review", label: "Return Request Under Review" },
+  { key: "approved", label: "Return Approved", altKey: "rejected", altLabel: "Return Rejected" },
+  { key: "pickup_scheduled", label: "Pickup Scheduled" },
+  { key: "pickup_completed", label: "Pickup Completed" },
+  { key: "in_transit", label: "Item In Transit" },
+  { key: "received", label: "Item Received by Vendor" },
+  { key: "inspection", label: "Quality Inspection" },
+  { key: "inspection_passed", label: "Return Accepted", altKey: "inspection_failed", altLabel: "Return Rejected" },
+  { key: "resolution_initiated", label: "Refund Initiated / Replacement Approved" },
+  { key: "resolved", label: "Refund Completed / Replacement Delivered" },
+];
+
+const STATUS_INDEX: Record<string, number> = {
+  pending: 0, under_review: 1, approved: 2, rejected: 2,
+  pickup_scheduled: 3, pickup_completed: 4, in_transit: 5, received: 6,
+  inspection: 7, inspection_passed: 8, inspection_failed: 8,
+  resolution_initiated: 9, resolved: 10,
 };
+const REJECTED_STATUSES = new Set(["rejected", "inspection_failed"]);
 
 export default function UserReturnsPage() {
   const [returns, setReturns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetch("/api/returns").then(r => r.json()).then(d => { setReturns(d.returns || []); setLoading(false); });
@@ -22,7 +35,7 @@ export default function UserReturnsPage() {
   if (loading) return <div className="flex items-center justify-center h-48"><div className="w-6 h-6 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-3xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">My Returns</h1>
 
       {returns.length === 0 ? (
@@ -31,55 +44,65 @@ export default function UserReturnsPage() {
           <Link href="/myorders" className="text-sm text-purple-600 hover:underline">View your orders</Link>
         </div>
       ) : (
-        <div className="space-y-3">
-          {returns.map(r => (
-            <div key={r.id} className="bg-white rounded-xl p-4 border border-gray-100">
-              <div className="flex gap-4">
-                {r.productImage && (
-                  <img src={r.productImage} alt="" className="w-16 h-16 rounded-lg object-cover bg-gray-50" />
-                )}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-gray-800">{r.productName}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_COLORS[r.status]}`}>{r.status}</span>
-                    {r.refundAmount && <span className="text-xs text-gray-500">Refund: ₹{r.refundAmount}</span>}
+        <div className="space-y-4">
+          {returns.map(r => {
+            const currentIdx = STATUS_INDEX[r.status] ?? 0;
+            const isRejectedTerminal = REJECTED_STATUSES.has(r.status);
+
+            return (
+              <div key={r.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                <div className="p-4 border-b border-gray-100 flex gap-3">
+                  {r.productImage && <img src={r.productImage} alt="" className="w-14 h-14 rounded-lg object-cover bg-gray-50" />}
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-gray-800">{r.productName}</span>
+                      {r.resolutionType && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 capitalize">{r.resolutionType}</span>
+                      )}
+                      {r.refundAmount && <span className="text-xs text-gray-500">₹{r.refundAmount}</span>}
+                    </div>
+                    <p className="text-sm text-gray-600 mt-0.5">{r.reason}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Seller: {r.sellerName}</p>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">{r.reason}</p>
-                  {r.description && <p className="text-xs text-gray-400">{r.description}</p>}
-                  <p className="text-xs text-gray-400 mt-1">Seller: {r.sellerName}</p>
+                </div>
 
-                  {/* Pickup info */}
-                  {r.pickupAddress && (
-                    <div className="mt-2 p-2 bg-blue-50 rounded-lg text-xs">
-                      <p className="text-blue-700 font-medium">Pickup: {r.pickupAddress}</p>
-                      {r.pickupScheduledAt && <p className="text-blue-600">{new Date(r.pickupScheduledAt).toLocaleString()}</p>}
-                    </div>
-                  )}
+                <div className="p-4">
+                  {STEP_DEFS.map((step, i) => {
+                    const stepDone = i <= currentIdx;
+                    const isCurrentDone = i === currentIdx;
+                    const isLast = i === STEP_DEFS.length - 1;
+                    const showAsRejected = isCurrentDone && isRejectedTerminal && !!step.altKey;
+                    const label = showAsRejected ? step.altLabel : step.label;
+                    const dotColor = isCurrentDone && isRejectedTerminal ? "#ef4444" : "#10b981";
 
-                  {/* Timeline */}
-                  {r.timeline?.length > 0 && (
-                    <button
-                      onClick={() => setExpanded(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
-                      className="mt-2 text-xs text-purple-600 hover:underline bg-transparent border-none cursor-pointer"
-                    >
-                      {expanded[r.id] ? "Hide" : "Show"} timeline
-                    </button>
-                  )}
-                  {expanded[r.id] && r.timeline?.length > 0 && (
-                    <div className="mt-1 space-y-1">
-                      {r.timeline.map((t: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 text-[11px] text-gray-400">
-                          <span className="w-2 h-2 rounded-full bg-gray-300" />
-                          <span className="capitalize">{t.status}</span>
-                          <span>{new Date(t.timestamp).toLocaleString()}</span>
+                    return (
+                      <div key={step.key} className="flex gap-3 relative">
+                        {!isLast && (
+                          <div className="absolute left-[10px] top-[26px]" style={{ width: 2, height: "calc(100% - 6px)", background: i < currentIdx ? "#10b981" : "#e0e0e0" }} />
+                        )}
+                        <div className="w-[22px] h-[22px] rounded-full flex-shrink-0 mt-[3px] z-10"
+                          style={{ background: stepDone ? dotColor : "#f5f5f5", border: `2px solid ${stepDone ? dotColor : "#e0e0e0"}` }} />
+                        <div className={`flex-1 ${isLast ? "" : "pb-[22px]"}`}>
+                          <p className={`text-sm font-semibold ${stepDone ? "text-gray-800" : "text-gray-300"}`}>{label}</p>
+
+                          {step.key === "pickup_scheduled" && i <= currentIdx && r.pickupAddress && (
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {r.pickupAddress} {r.pickupScheduledAt && `· ${new Date(r.pickupScheduledAt).toLocaleString()}`}
+                            </p>
+                          )}
+                          {step.key === "in_transit" && i <= currentIdx && r.returnTrackingNumber && (
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {r.returnCourier ? `${r.returnCourier}: ` : ""}{r.returnTrackingNumber}
+                            </p>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
