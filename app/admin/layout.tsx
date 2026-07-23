@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { label: "Coins",      href: "/admin/coins",      icon: Settings },
   { label: "Coupons",    href: "/admin/coupons",    icon: Percent },
   { label: "Partner Offers", href: "/admin/partner-offers", icon: Tags },
+   { label: "Messages", href: "/admin/messages", icon: MessageSquare },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

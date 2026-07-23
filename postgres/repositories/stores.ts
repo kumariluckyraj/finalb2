@@ -93,8 +93,8 @@ export async function updateStore(sellerId: string, patch: Partial<CreateStoreIn
       WHERE seller_id = $1
       RETURNING id, seller_id AS "sellerId", store_name AS "storeName", url_slug AS "urlSlug", banner_url AS "bannerUrl", description, shipping_policy AS "shippingPolicy", return_policy AS "returnPolicy", primary_category AS "primaryCategory", subcategories, rating, total_ratings AS "totalRatings", is_featured AS "isFeatured", is_published AS "isPublished", cod_enabled AS "codEnabled", delivery_promise_days AS "deliveryPromiseDays", delivery_charge AS "deliveryCharge", free_shipping_threshold AS "freeShippingThreshold", created_at AS "createdAt", updated_at AS "updatedAt"
     `,
-    [
-      existing.id,
+  [
+      sellerId,
       next.storeName,
       next.urlSlug,
       next.bannerUrl ?? null,

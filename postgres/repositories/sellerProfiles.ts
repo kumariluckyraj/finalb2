@@ -121,3 +121,8 @@ export async function updateSellerProfile(id: string, patch: Partial<CreateSelle
   );
   return rows[0] ?? null;
 }
+
+export async function listAllSellerIds(): Promise<string[]> {
+  const { rows } = await query<{ id: string }>(`SELECT id FROM seller_profiles`);
+  return rows.map(r => r.id);
+}

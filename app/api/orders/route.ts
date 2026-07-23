@@ -39,6 +39,7 @@ type OrderRow = {
   razorpayPaymentId: string | null;
   status: string;
   totalAmount: number;
+  deliveryFee: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -74,6 +75,57 @@ export async function POST(req: NextRequest) {
       }
 
       if (itemsToProcess.length === 0) throw new RouteError("No items to process", 400);
+      if (itemsToProcess.length === 0) throw new RouteError("No items to process", 400);
+
+      // ── Pre-pass: fetch vendor + price for each item, group by vendor ──
+      const itemVendors: { productId: string; quantity: number; size?: string; vendorId: string; price: number }[] = [];
+      for (const item of itemsToProcess) {
+        const { rows } = await client.query<{ vendorId: string; price: number }>(
+          `SELECT vendor_id AS "vendorId", price::float8 AS price FROM products WHERE id = $1`,
+          [item.productId]
+        );
+        if (!rows[0]) throw new RouteError(`Product not found`, 404);
+        itemVendors.push({ ...item, vendorId: rows[0].vendorId, price: rows[0].price });
+      }
+
+      const vendorSubtotals = new Map<string, number>();
+      for (const iv of itemVendors) {
+        vendorSubtotals.set(iv.vendorId, (vendorSubtotals.get(iv.vendorId) ?? 0) + iv.price * iv.quantity);
+      }
+
+      // ── Fetch each vendor's store settings once, compute delivery fee, enforce COD ──
+      const vendorDeliveryFee = new Map<string, number>();
+      for (const [vendorId, subtotal] of vendorSubtotals) {
+        const { rows } = await client.query<{
+          codEnabled: boolean;
+          deliveryCharge: number;
+          freeShippingThreshold: number | null;
+        }>(
+          `
+            SELECT s.cod_enabled AS "codEnabled",
+                   s.delivery_charge AS "deliveryCharge",
+                   s.free_shipping_threshold AS "freeShippingThreshold"
+            FROM stores s
+            JOIN seller_profiles sp ON sp.id = s.seller_id
+            WHERE sp.user_id = $1
+          `,
+          [vendorId]
+        );
+        const store = rows[0];
+
+        if (paymentMethod === "cod" && store && store.codEnabled === false) {
+          throw new RouteError("Cash on Delivery is not available for one or more items in your order", 400);
+        }
+
+        const threshold = store?.freeShippingThreshold ?? 499;
+        const charge = store?.deliveryCharge ?? 40;
+        vendorDeliveryFee.set(vendorId, subtotal >= threshold ? 0 : charge);
+      }
+
+      const deliveryFeeTotal = Array.from(vendorDeliveryFee.values()).reduce((a, b) => a + b, 0);
+      const deliveryFeeAppliedForVendor = new Set<string>();
+
+     
 
       const createdOrders = [];
       let grandTotal = 0;
@@ -151,7 +203,7 @@ export async function POST(req: NextRequest) {
           appliedCoupon = promo;
         }
 
-        const itemTotal = productRow.price * item.quantity;
+       const itemTotal = productRow.price * item.quantity;
         grandTotal += itemTotal;
         let orderTotal = itemTotal;
         if (appliedCoupon) {
@@ -168,15 +220,22 @@ export async function POST(req: NextRequest) {
           orderTotal = itemTotal - discAmt;
         }
 
-        const { rows: orderRows } = await client.query<OrderRow>(
+        let deliveryFeeForThisOrder = 0;
+        if (!deliveryFeeAppliedForVendor.has(productRow.vendorId)) {
+          deliveryFeeForThisOrder = vendorDeliveryFee.get(productRow.vendorId) ?? 0;
+          deliveryFeeAppliedForVendor.add(productRow.vendorId);
+        }
+        orderTotal = orderTotal + deliveryFeeForThisOrder;
+
+       const { rows: orderRows } = await client.query<OrderRow>(
           `
             INSERT INTO orders (
               id, user_id, product_id, vendor_id, quantity, size, address_full_name, address_phone,
               address_line1, address_line2, address_city, address_state, address_pincode,
-              payment_method, payment_status, status, total_amount
+              payment_method, payment_status, status, total_amount, delivery_fee
             )
-            VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending', $15)
-            RETURNING id, user_id AS "userId", product_id AS "productId", vendor_id AS "vendorId", quantity, size, address_full_name AS "addressFullName", address_phone AS "addressPhone", address_line1 AS "addressLine1", address_line2 AS "addressLine2", address_city AS "addressCity", address_state AS "addressState", address_pincode AS "addressPincode", payment_method AS "paymentMethod", payment_status AS "paymentStatus", razorpay_order_id AS "razorpayOrderId", razorpay_payment_id AS "razorpayPaymentId", status, total_amount::float8 AS "totalAmount", created_at AS "createdAt", updated_at AS "updatedAt"
+            VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending', $15, $16)
+            RETURNING id, user_id AS "userId", product_id AS "productId", vendor_id AS "vendorId", quantity, size, address_full_name AS "addressFullName", address_phone AS "addressPhone", address_line1 AS "addressLine1", address_line2 AS "addressLine2", address_city AS "addressCity", address_state AS "addressState", address_pincode AS "addressPincode", payment_method AS "paymentMethod", payment_status AS "paymentStatus", razorpay_order_id AS "razorpayOrderId", razorpay_payment_id AS "razorpayPaymentId", status, total_amount::float8 AS "totalAmount", delivery_fee::float8 AS "deliveryFee", created_at AS "createdAt", updated_at AS "updatedAt"
           `,
           [
             user.userId,
@@ -194,6 +253,7 @@ export async function POST(req: NextRequest) {
             paymentMethod ?? "cod",
             "pending",
             orderTotal,
+            deliveryFeeForThisOrder,
           ]
         );
 
@@ -251,7 +311,7 @@ export async function POST(req: NextRequest) {
       let coinDiscountApplied = 0;
 
       if (coinsUsed && coinsUsed > 0) {
-        const orderTotalAfterCoupon = grandTotal - couponDiscountTotal;
+        const orderTotalAfterCoupon = grandTotal - couponDiscountTotal + deliveryFeeTotal;
 
         // Re-validate against the real wallet balance server-side — never trust the client's number
         const walletRes = await client.query<{ id: string; balance: number; status: string }>(
@@ -302,7 +362,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return { createdOrders, totalAmount: grandTotal - couponDiscountTotal - coinDiscountApplied };
+      return { createdOrders, totalAmount: grandTotal - couponDiscountTotal + deliveryFeeTotal - coinDiscountApplied };
     });
 
     if (paymentMethod === "razorpay") {

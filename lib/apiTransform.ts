@@ -28,11 +28,13 @@ type FlatOrderRow = {
   razorpayPaymentId?: string | null;
   status: string;
   totalAmount: number;
+  deliveryFee?: number;        // ← add this
+  coinsUsed?: number | null;    // ← add if you want it typed too
+  coinDiscount?: number | null; // ← same
   trackingEvents?: OrderRecord["trackingEvents"];
   createdAt?: Date;
   updatedAt?: Date;
 };
-
 export function toApiOrder(order: OrderRecord | OrderWithProductRecord | FlatOrderRow) {
   if ("addressFullName" in order) {
     const productId = typeof order.productId === "string" || order.productId === null ? order.productId : toApiProduct(order.productId);

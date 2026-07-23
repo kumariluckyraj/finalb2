@@ -76,13 +76,17 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
             state: sellerProfile.state,
           }
         : null,
-      store: store
+     store: store
         ? {
             id: store.id,
             storeName: store.storeName,
             urlSlug: store.urlSlug,
             bannerUrl: store.bannerUrl,
             description: store.description,
+            codEnabled: store.codEnabled,
+            deliveryPromiseDays: store.deliveryPromiseDays,
+            deliveryCharge: store.deliveryCharge,
+            freeShippingThreshold: store.freeShippingThreshold,
           }
         : null,
     },
