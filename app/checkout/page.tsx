@@ -410,7 +410,10 @@ function CheckoutContent() {
     ? cartItems.reduce((sum, item) => sum + ((item.productId?.actualPrice ?? item.productId?.price ?? 0) * item.quantity), 0)
     : (product ? (product.actualPrice || product.price) * quantity : 0);
 
-  const deliveryFee = subtotal >= 499 ? 0 : 40;
+  const storeSettings = product?.store ?? null;
+  const freeShippingThreshold = storeSettings?.freeShippingThreshold ?? 499;
+  const deliveryCharge = storeSettings?.deliveryCharge ?? 40;
+  const deliveryFee = subtotal >= freeShippingThreshold ? 0 : deliveryCharge;
   const discount = totalActual - subtotal;
   const coinDiscount = coinRedeemEnabled ? Math.min(coinRedeemAmount, subtotal + deliveryFee) : 0;
   const total = Math.max(0, subtotal + deliveryFee - coinDiscount - couponDiscount);
@@ -428,6 +431,12 @@ function CheckoutContent() {
         .catch(() => { });
     }
   }, [subtotal]);
+
+  useEffect(() => {
+    if (storeSettings?.codEnabled === false && paymentMethod === "cod") {
+      setPaymentMethod("razorpay");
+    }
+  }, [storeSettings, paymentMethod]);
 
   const placeOrder = async () => {
     setPlacing(true);
@@ -757,11 +766,16 @@ function CheckoutContent() {
             <div>
               {/* Address summary */}
               <div style={{ background: b2w.white, borderRadius: 8, border: `1px solid ${b2w.border}`, padding: "14px 20px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
+               <div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: b2w.teal, textTransform: "uppercase", letterSpacing: 0.5 }}>{t("deliveringTo")}</span>
                   <p style={{ margin: "4px 0 0", fontSize: 14, color: b2w.navy, fontWeight: 500 }}>
                     {address.fullName} | {address.line1}, {address.city}, {address.state} - {address.pincode}
                   </p>
+                  {storeSettings?.deliveryPromiseDays && (
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: b2w.muted }}>
+                      Estimated delivery in {storeSettings.deliveryPromiseDays} days
+                    </p>
+                  )}
                 </div>
                 <button onClick={() => setStep("address")} style={{ background: "none", border: `1px solid ${b2w.teal}`, color: b2w.teal, padding: "6px 16px", borderRadius: 4, cursor: "pointer", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
                   {t("change")}
@@ -774,9 +788,11 @@ function CheckoutContent() {
                   <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: b2w.navy }}>{t("selectPayment")}</h2>
                 </div>
                 <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
-                  {[
+                 {[
                     { id: "razorpay", label: t("payOnline"), desc: t("payOnlineDesc"), icon: "" },
-                    { id: "cod", label: t("cod"), desc: t("codDesc"), icon: "" },
+                    ...(storeSettings?.codEnabled !== false
+                      ? [{ id: "cod", label: t("cod"), desc: t("codDesc"), icon: "" }]
+                      : []),
                   ].map(opt => (
                     <div key={opt.id} onClick={() => setPaymentMethod(opt.id as any)}
                       style={{ border: `2px solid ${paymentMethod === opt.id ? b2w.teal : b2w.border}`, borderRadius: 4, padding: "14px 18px", cursor: "pointer", background: paymentMethod === opt.id ? b2w.lightteal : b2w.white, transition: "all 0.15s", display: "flex", alignItems: "center", gap: 14 }}>
