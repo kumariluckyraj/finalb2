@@ -103,6 +103,39 @@ CREATE TABLE IF NOT EXISTS seller_products (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Product coverage mode
+ALTER TABLE seller_products
+  ADD COLUMN IF NOT EXISTS coverage_type text NOT NULL DEFAULT 'PINCODE'
+    CHECK (coverage_type IN ('PAN', 'STATE', 'DISTRICT', 'PINCODE'));
+
+-- Product Coverage Areas (states / districts / pincodes a product ships to)
+CREATE TABLE IF NOT EXISTS product_coverage_areas (
+  id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  seller_product_id text NOT NULL REFERENCES seller_products(id) ON DELETE CASCADE,
+  area_type text NOT NULL CHECK (area_type IN ('STATE', 'DISTRICT', 'PINCODE')),
+  value text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (seller_product_id, area_type, value)
+);
+
+-- Pincode -> state/district lookup cache (used to resolve buyer pincodes against STATE/DISTRICT coverage)
+CREATE TABLE IF NOT EXISTS pincode_lookup_cache (
+  pincode text PRIMARY KEY,
+  state text NOT NULL,
+  district text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Legacy pincode-only table (kept for backward compatibility / one-time backfill below).
+-- If this already exists in your DB from before, this is a no-op.
+CREATE TABLE IF NOT EXISTS product_serviceable_pincodes (
+  id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  seller_product_id text NOT NULL REFERENCES seller_products(id) ON DELETE CASCADE,
+  pincode text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (seller_product_id, pincode)
+);
+
 -- Product Variants
 CREATE TABLE IF NOT EXISTS product_variants (
   id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -334,6 +367,8 @@ CREATE INDEX IF NOT EXISTS idx_seller_products_seller_id ON seller_products (sel
 CREATE INDEX IF NOT EXISTS idx_seller_products_store_id ON seller_products (store_id);
 CREATE INDEX IF NOT EXISTS idx_seller_products_category ON seller_products (category);
 CREATE INDEX IF NOT EXISTS idx_seller_products_status ON seller_products (status);
+CREATE INDEX IF NOT EXISTS idx_product_coverage_areas_product_id ON product_coverage_areas (seller_product_id);
+CREATE INDEX IF NOT EXISTS idx_product_serviceable_pincodes_product_id ON product_serviceable_pincodes (seller_product_id);
 CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON product_variants (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_media_product_id ON product_media (product_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_logs_product_id ON inventory_logs (product_id);
@@ -351,3 +386,8 @@ CREATE INDEX IF NOT EXISTS idx_seller_messages_seller_id ON seller_messages (sel
 CREATE INDEX IF NOT EXISTS idx_promotions_seller_id ON promotions (seller_id);
 CREATE INDEX IF NOT EXISTS idx_promotions_code ON promotions (code);
 CREATE INDEX IF NOT EXISTS idx_seller_analytics_seller_id_date ON seller_analytics (seller_id, date);
+
+-- One-time backfill: copy any existing pincode-only rows into the new generalized table
+INSERT INTO product_coverage_areas (seller_product_id, area_type, value)
+SELECT seller_product_id, 'PINCODE', pincode FROM product_serviceable_pincodes
+ON CONFLICT DO NOTHING;
