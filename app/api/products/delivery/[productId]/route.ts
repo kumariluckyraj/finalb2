@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isPincodeServiceable } from "@/postgres/repositories/productRecommendations";
+import { isPincodeServiceable } from "@/postgres/repositories/productCoverage";
 import { query } from "@/postgres/lib/db";
 
 export async function GET(

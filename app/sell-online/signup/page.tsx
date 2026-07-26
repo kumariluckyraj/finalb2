@@ -21,12 +21,17 @@ export default function VendorSignup() {
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
+const [panVerified, setPanVerified] = useState(false);
+  const [verifyingPan, setVerifyingPan] = useState(false);
+  const [gstVerified, setGstVerified] = useState(false);
+const [verifyingGst, setVerifyingGst] = useState(false);
+const [gstBusinessName, setGstBusinessName] = useState("");
   const [form, setForm] = useState({
     // Step 1
     name: "", email: "", mobile: "", password: "", confirmPassword: "", agreed: false,
     // Step 2
-    gstNumber: "", panNumber: "",
+    // Step 2
+    gstNumber: "", panNumber: "", dob: "",
     // Step 3
     accountHolderName: "", accountNumber: "", ifscCode: "",
     // Step 4
@@ -81,6 +86,77 @@ export default function VendorSignup() {
     }
   }
 
+  async function handleVerifyPan() {
+    if (!form.panNumber || !form.name || !form.dob) {
+      setError("Please fill Name, DOB, and PAN before verifying.");
+      return;
+    }
+    setVerifyingPan(true);
+    setError("");
+    try {
+      const res = await fetch("/api/vendor/verify-pan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pan: form.panNumber, name: form.name, dob: form.dob }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "PAN verification failed.");
+        setPanVerified(false);
+        return;
+      }
+      // Adjust this condition to match whatever field your route actually returns
+      const isValid = data?.data?.status === "VALID" || data?.data?.pan_valid || data?.valid;
+      if (isValid) {
+        setPanVerified(true);
+      } else {
+        setPanVerified(false);
+        setError("PAN details could not be verified. Please check and try again.");
+      }
+    } catch (err) {
+      console.error("PAN verification failed:", err);
+      setError("Verification service unavailable. Please try again.");
+      setPanVerified(false);
+    } finally {
+      setVerifyingPan(false);
+    }
+  }
+
+  async function handleVerifyGst() {
+  if (!form.gstNumber) {
+    setError("Please enter your GST number before verifying.");
+    return;
+  }
+  setVerifyingGst(true);
+  setError("");
+  try {
+    const res = await fetch("/api/vendor/verify-gst", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gstin: form.gstNumber }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || "GST verification failed.");
+      setGstVerified(false);
+      return;
+    }
+    if (data.valid) {
+      setGstVerified(true);
+      setGstBusinessName(data.legalName || data.tradeName || "");
+    } else {
+      setGstVerified(false);
+      setError(data.message || "GSTIN could not be verified.");
+    }
+  } catch (err) {
+    console.error("GST verification failed:", err);
+    setError("Verification service unavailable. Please try again.");
+    setGstVerified(false);
+  } finally {
+    setVerifyingGst(false);
+  }
+}
+
   function validateStep(): string {
     if (step === 0) {
       if (!form.name || !form.email || !form.mobile || !form.password || !form.confirmPassword)
@@ -88,10 +164,12 @@ export default function VendorSignup() {
       if (form.password !== form.confirmPassword) return "Passwords do not match.";
       if (!form.agreed) return "Please agree to Terms & Conditions.";
     }
-    if (step === 1) {
-      if (!form.gstNumber || !form.panNumber) return "Please fill all required fields.";
-      if (!files.aadhaarCard || !files.gstCertificate || !files.panCard) return "Please upload all required documents.";
-    }
+ if (step === 1) {
+  if (!form.gstNumber || !form.panNumber || !form.dob) return "Please fill all required fields.";
+  if (!panVerified) return "Please verify your PAN before continuing.";
+  if (!gstVerified) return "Please verify your GST number before continuing.";
+  if (!files.aadhaarCard || !files.gstCertificate || !files.panCard) return "Please upload all required documents.";
+}
     if (step === 2) {
       if (!form.accountHolderName || !form.accountNumber || !form.ifscCode) return "Please fill all required fields.";
     }
@@ -169,18 +247,65 @@ export default function VendorSignup() {
           </div>
         )}
 
-        {step === 1 && (
+       {step === 1 && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>GST Number <span className="text-red-500">*</span></label>
-                <input className={inputCls} placeholder="22AAAAA0000A1Z5" value={form.gstNumber} onChange={e => set("gstNumber", e.target.value)} />
-              </div>
+  <label className={labelCls}>GST Number <span className="text-red-500">*</span></label>
+  <div className="flex gap-2 items-stretch">
+    <input
+      className={inputCls + " flex-1"}
+      placeholder="22AAAAA0000A1Z5"
+      value={form.gstNumber}
+      onChange={e => { set("gstNumber", e.target.value); setGstVerified(false); }}
+      disabled={gstVerified}
+    />
+    <button
+      type="button"
+      onClick={handleVerifyGst}
+      disabled={verifyingGst || gstVerified || !form.gstNumber}
+      className={`px-4 rounded-xl text-xs font-semibold whitespace-nowrap transition
+        ${gstVerified
+          ? "bg-green-100 text-green-700 cursor-default"
+          : "bg-brand-blue text-white hover:opacity-90 disabled:opacity-50"}`}
+    >
+      {gstVerified ? "Verified ✓" : verifyingGst ? "Checking..." : "Verify"}
+    </button>
+  </div>
+  {gstVerified && gstBusinessName && (
+    <p className="text-xs text-gray-500 mt-1">Registered as: {gstBusinessName}</p>
+  )}
+</div>
               <div>
-                <label className={labelCls}>PAN Number <span className="text-red-500">*</span></label>
-                <input className={inputCls} placeholder="ABCDE1234F" value={form.panNumber} onChange={e => set("panNumber", e.target.value)} />
+                <label className={labelCls}>Date of Birth <span className="text-red-500">*</span></label>
+                <input className={inputCls} type="date" value={form.dob} onChange={e => { set("dob", e.target.value); setPanVerified(false); }} />
               </div>
             </div>
+
+            <div>
+              <label className={labelCls}>PAN Number <span className="text-red-500">*</span></label>
+              <div className="flex gap-2 items-stretch">
+                <input
+                  className={inputCls + " flex-1"}
+                  placeholder="ABCDE1234F"
+                  value={form.panNumber}
+                  onChange={e => { set("panNumber", e.target.value); setPanVerified(false); }}
+                  disabled={panVerified}
+                />
+                <button
+                  type="button"
+                  onClick={handleVerifyPan}
+                  disabled={verifyingPan || panVerified || !form.panNumber || !form.dob}
+                  className={`px-5 rounded-xl text-sm font-semibold whitespace-nowrap transition
+                    ${panVerified
+                      ? "bg-green-100 text-green-700 cursor-default"
+                      : "bg-brand-blue text-white hover:opacity-90 disabled:opacity-50"}`}
+                >
+                  {panVerified ? "Verified ✓" : verifyingPan ? "Checking..." : "Verify"}
+                </button>
+              </div>
+            </div>
+
             <FileUploadBox field="aadhaarCard" label="Aadhaar Card Upload" />
             <FileUploadBox field="gstCertificate" label="GST Certificate Upload" />
             <FileUploadBox field="panCard" label="PAN Card Upload" />

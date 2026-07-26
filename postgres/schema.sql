@@ -374,3 +374,16 @@ ALTER TABLE seller_products
   ADD COLUMN IF NOT EXISTS warehouse_city text,
   ADD COLUMN IF NOT EXISTS warehouse_state text,
   ADD COLUMN IF NOT EXISTS warehouse_pincode text;
+
+  ALTER TABLE seller_products
+  ADD COLUMN IF NOT EXISTS warehouse_address text,
+  ADD COLUMN IF NOT EXISTS warehouse_city text,
+  ADD COLUMN IF NOT EXISTS warehouse_state text,
+  ADD COLUMN IF NOT EXISTS warehouse_pincode text;
+
+-- Sub Admin / Employee support
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check
+  CHECK (role IN ('admin', 'sub_admin', 'employee', 'customer', 'vendor'));
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by text REFERENCES users(id) ON DELETE SET NULL;

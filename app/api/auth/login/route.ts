@@ -5,6 +5,7 @@ import { findUserByEmail } from "@/postgres/repositories/users";
 import { rateLimit } from "@/lib/rateLimit";
 
 const ADMIN_DOMAIN = process.env.ADMIN_DOMAIN;
+const ADMIN_ROLES = ["admin", "sub_admin"];
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
@@ -30,12 +31,13 @@ export async function POST(req: NextRequest) {
 
   const hostname = (req.headers.get("host") || "").split(":")[0];
   const isAdminDomain = ADMIN_DOMAIN && hostname === ADMIN_DOMAIN;
+  const isAdminRole = ADMIN_ROLES.includes(user.role);
 
-  if (isAdminDomain && user.role !== "admin") {
+  if (isAdminDomain && !isAdminRole) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  if (user.role === "admin" && ADMIN_DOMAIN && !isAdminDomain) {
+  if (isAdminRole && ADMIN_DOMAIN && !isAdminDomain) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 

@@ -4,12 +4,13 @@ import { jwtVerify } from "jose";
 const SECRET = new TextEncoder().encode(process.env.JWT_SECRET!);
 const ADMIN_DOMAIN = process.env.ADMIN_DOMAIN;
 const SELLER_DOMAIN = process.env.SELLER_DOMAIN;
+const ADMIN_ROLES = ["admin", "sub_admin"];
 
 const ROLE_ROUTES: Record<string, string[]> = {
-  "/admin":     ["admin"],
+  "/admin":     ["admin", "sub_admin"],
   "/dashboard": ["customer", "vendor"],
   "/checkout":  ["customer", "vendor"],
-  "/wishlist":  ["customer", "vendor", "admin"],
+"/wishlist":  ["customer", "vendor", "admin", "sub_admin"],
 };
 
 function matchesSubdomain(hostname: string, fullDomain: string | undefined): boolean {
@@ -31,21 +32,23 @@ export async function middleware(req: NextRequest) {
 
   // ─── Admin subdomain enforcement ─────────────────────────────────
   if (matchesSubdomain(hostname, ADMIN_DOMAIN)) {
-    if (path === "/login" || path === "/unauthorized") return NextResponse.next();
-    if (!token) return NextResponse.redirect(new URL("/login", req.url));
+  if (path === "/login" || path === "/unauthorized") return NextResponse.next();
+  if (!token) return NextResponse.redirect(new URL("/login", req.url));
 
-    try {
-      const { payload } = await jwtVerify(token, SECRET);
-      if (payload.role !== "admin") return NextResponse.redirect(new URL("/unauthorized", req.url));
-
-      if (path === "/") return NextResponse.rewrite(new URL("/admin", req.url));
-      if (!path.startsWith("/admin")) return NextResponse.redirect(new URL("/admin", req.url));
-
-      return NextResponse.next();
-    } catch {
-      return NextResponse.redirect(new URL("/login", req.url));
+  try {
+    const { payload } = await jwtVerify(token, SECRET);
+    if (!ADMIN_ROLES.includes(payload.role as string)) {
+      return NextResponse.redirect(new URL("/unauthorized", req.url));
     }
+
+    if (path === "/") return NextResponse.rewrite(new URL("/admin", req.url));
+    if (!path.startsWith("/admin")) return NextResponse.redirect(new URL("/admin", req.url));
+
+    return NextResponse.next();
+  } catch {
+    return NextResponse.redirect(new URL("/login", req.url));
   }
+}
 
   // ─── Seller subdomain enforcement ────────────────────────────────
   if (matchesSubdomain(hostname, SELLER_DOMAIN)) {

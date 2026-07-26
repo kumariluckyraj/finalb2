@@ -1,10 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Package, ShoppingBag, Store, Users, TrendingUp, DollarSign,
-  Clock, Truck, CheckCircle, XCircle, AlertCircle,
-} from "lucide-react";
+import { AlertCircle } from "lucide-react";
 
 interface Metrics {
   totalOrders: number;
@@ -38,10 +36,22 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetch("/api/admin/dashboard")
-      .then((r) => r.json())
-      .then((d) => { setMetrics(d); setLoading(false); })
+      .then(async (r) => {
+        if (!r.ok) {
+          if (r.status === 401) {
+            router.push("/login");
+            return null;
+          }
+          throw new Error("Failed to load dashboard metrics");
+        }
+        return r.json();
+      })
+      .then((d) => {
+        if (d) setMetrics(d);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   if (loading) {
     return (
@@ -51,47 +61,85 @@ export default function AdminDashboard() {
     );
   }
 
-  const statCards = metrics
-    ? [
-        { label: "Total Orders",  value: metrics.totalOrders,     icon: Package,     color: "bg-blue-50 text-blue-600" },
-        { label: "Revenue",       value: `₹${metrics.totalRevenue.toLocaleString("en-IN")}`, icon: DollarSign, color: "bg-green-50 text-green-600" },
-        { label: "Products",      value: metrics.totalProducts,   icon: ShoppingBag, color: "bg-purple-50 text-purple-600" },
-        { label: "Users",         value: metrics.totalUsers,      icon: Users,       color: "bg-cyan-50 text-cyan-600" },
-        { label: "Vendors",       value: metrics.totalVendors,    icon: Store,       color: "bg-orange-50 text-orange-600" },
-      ]
-    : [];
+  if (!metrics) {
+    return <div className="text-center py-12 text-gray-400">Failed to load dashboard</div>;
+  }
 
-  const pendingCount = metrics?.ordersByStatus?.pending ?? 0;
-  const deliveredCount = metrics?.ordersByStatus?.delivered ?? 0;
+  const pendingCount = metrics.ordersByStatus?.pending ?? 0;
+
+  const cards = [
+    { label: "Total Orders", value: metrics.totalOrders ?? 0, color: "bg-blue-50 text-blue-700" },
+    { label: "Revenue", value: `₹${(metrics.totalRevenue ?? 0).toLocaleString("en-IN")}`, color: "bg-green-50 text-green-700" },
+    { label: "Products", value: metrics.totalProducts ?? 0, color: "bg-purple-50 text-purple-700" },
+    { label: "Users", value: metrics.totalUsers ?? 0, color: "bg-cyan-50 text-cyan-700" },
+    { label: "Vendors", value: metrics.totalVendors ?? 0, color: "bg-orange-50 text-orange-700" },
+    { label: "Pending Orders", value: pendingCount, color: pendingCount > 0 ? "bg-yellow-50 text-yellow-700" : "bg-gray-50 text-gray-700" },
+  ];
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-b2w-navy">Dashboard</h1>
-          <p className="text-sm text-b2w-muted mt-0.5">Overview of your marketplace</p>
+      <h1 className="text-2xl font-bold text-b2w-navy mb-1">Dashboard</h1>
+      <p className="text-b2w-muted text-sm mb-6">Overview of your marketplace</p>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        {cards.map(card => (
+          <div key={card.label} className={`rounded-xl p-4 ${card.color}`}>
+            <p className="text-sm opacity-80 mb-1">{card.label}</p>
+            <p className="text-2xl font-bold">{card.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white rounded-xl p-5 border border-b2w-border">
+          <h3 className="font-semibold text-b2w-navy mb-4">Quick Actions</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <Link href="/admin/orders" className="p-3 bg-blue-50 rounded-xl text-center hover:bg-blue-100 transition">
+              <span className="text-lg font-bold text-blue-600">List</span>
+              <p className="text-sm font-medium text-blue-700 mt-1">Orders</p>
+            </Link>
+            <Link href="/admin/products" className="p-3 bg-purple-50 rounded-xl text-center hover:bg-purple-100 transition">
+              <span className="text-lg font-bold text-purple-600">+</span>
+              <p className="text-sm font-medium text-purple-700 mt-1">Products</p>
+            </Link>
+            <Link href="/admin/vendors" className="p-3 bg-orange-50 rounded-xl text-center hover:bg-orange-100 transition">
+              <span className="text-lg font-bold text-orange-600">Store</span>
+              <p className="text-sm font-medium text-orange-700 mt-1">Vendors</p>
+            </Link>
+            <Link href="/admin/users" className="p-3 bg-cyan-50 rounded-xl text-center hover:bg-cyan-100 transition">
+              <span className="text-lg font-bold text-cyan-600">Users</span>
+              <p className="text-sm font-medium text-cyan-700 mt-1">Manage Users</p>
+            </Link>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 border border-b2w-border">
+          <h3 className="font-semibold text-b2w-navy mb-4">Alerts</h3>
+          <div className="space-y-3">
+            {pendingCount > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-700">
+                    {pendingCount} order{pendingCount !== 1 ? "s" : ""} pending
+                  </p>
+                  <Link href="/admin/orders" className="text-xs text-amber-600 hover:underline">
+                    Review now
+                  </Link>
+                </div>
+              </div>
+            )}
+            {pendingCount === 0 && (
+              <p className="text-sm text-gray-400 py-4 text-center">No alerts — all clear!</p>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-6">
-        {statCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <div key={card.label} className="bg-white rounded-xl border border-b2w-border p-4">
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 ${card.color}`}>
-                <Icon className="w-5 h-5" />
-              </div>
-              <p className="text-xs text-b2w-muted uppercase tracking-wider">{card.label}</p>
-              <p className="text-lg font-bold text-b2w-navy mt-0.5">{card.value}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-b2w-border p-4">
-          <h2 className="text-sm font-bold text-b2w-navy mb-4">Orders by Status</h2>
-          {metrics && Object.keys(metrics.ordersByStatus).length > 0 ? (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white rounded-xl border border-b2w-border p-5">
+          <h3 className="font-semibold text-b2w-navy mb-4">Orders by Status</h3>
+          {Object.keys(metrics.ordersByStatus).length > 0 ? (
             <div className="space-y-2.5">
               {Object.entries(metrics.ordersByStatus).map(([status, count]) => {
                 const total = metrics.totalOrders || 1;
@@ -114,51 +162,11 @@ export default function AdminDashboard() {
             <p className="text-sm text-b2w-muted text-center py-6">No orders yet</p>
           )}
         </div>
-
-        <div className="bg-white rounded-xl border border-b2w-border p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-b2w-navy">Quick Actions</h2>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { label: "View Orders",     href: "/admin/orders",   icon: Package,     color: "bg-blue-50 text-blue-600" },
-              { label: "Products",        href: "/admin/products", icon: ShoppingBag, color: "bg-purple-50 text-purple-600" },
-              { label: "Vendors",         href: "/admin/vendors",  icon: Store,       color: "bg-orange-50 text-orange-600" },
-              { label: "Manage Users",    href: "/admin/users",    icon: Users,       color: "bg-cyan-50 text-cyan-600" },
-            ].map((action) => {
-              const Icon = action.icon;
-              return (
-                <button
-                  key={action.href}
-                  onClick={() => router.push(action.href)}
-                  className="flex items-center gap-2.5 p-3 rounded-lg border border-b2w-border hover:border-b2w-brand/30 transition cursor-pointer bg-transparent text-left"
-                >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${action.color}`}>
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <span className="text-xs font-semibold text-b2w-navy">{action.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {pendingCount > 0 && (
-            <div className="mt-4 p-3 bg-amber-50 rounded-lg flex items-center gap-2.5">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              <p className="text-xs text-amber-800">
-                <strong>{pendingCount}</strong> order{pendingCount !== 1 ? "s" : ""} pending —{" "}
-                <button onClick={() => router.push("/admin/orders")} className="underline font-semibold bg-transparent border-none cursor-pointer text-amber-800">
-                  review now
-                </button>
-              </p>
-            </div>
-          )}
-        </div>
       </div>
 
-      {metrics && metrics.recentOrders.length > 0 && (
-        <div className="bg-white rounded-xl border border-b2w-border p-4">
-          <h2 className="text-sm font-bold text-b2w-navy mb-4">Recent Orders</h2>
+      {metrics.recentOrders.length > 0 && (
+        <div className="bg-white rounded-xl border border-b2w-border p-5">
+          <h3 className="font-semibold text-b2w-navy mb-4">Recent Orders</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
