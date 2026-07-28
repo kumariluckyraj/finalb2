@@ -170,6 +170,45 @@ export async function getTransactionsByReference(
   return rows;
 }
 
+export async function getExpiringCoinsSummary(
+  userId: string
+): Promise<{ amount: number; expiryDate: string } | null> {
+  const earnResult = await query<{ id: string; amount: number; expiryDate: string }>(
+    `SELECT id, amount, expiry_date AS "expiryDate"
+     FROM wallet_transactions
+     WHERE user_id = $1
+       AND type IN ('earn', 'promotional_credit')
+       AND expiry_date IS NOT NULL
+     ORDER BY created_at ASC`,
+    [userId]
+  );
+  if (earnResult.rows.length === 0) return null;
+
+  // Coins already gone (spent, refunded back, or previously expired) eat into
+  // the OLDEST earn batches first — that's what makes this FIFO.
+  const consumedResult = await query<{ total: string }>(
+    `SELECT COALESCE(SUM(amount), 0) AS total
+     FROM wallet_transactions
+     WHERE user_id = $1 AND type IN ('spend', 'expire', 'refund')`,
+    [userId]
+  );
+  let toConsume = parseInt(consumedResult.rows[0].total, 10);
+
+  for (const tx of earnResult.rows) {
+    const amount = Number(tx.amount);
+    if (toConsume >= amount) {
+      toConsume -= amount;
+      continue; // this whole batch has already been used up
+    }
+    const remainingInBatch = amount - toConsume;
+    toConsume = 0;
+    if (remainingInBatch > 0 && new Date(tx.expiryDate) > new Date()) {
+      return { amount: remainingInBatch, expiryDate: tx.expiryDate };
+    }
+  }
+  return null;
+}
+
 export async function getCoinRules(ruleType?: string): Promise<CoinRuleRecord[]> {
   if (ruleType) {
     const { rows } = await query<CoinRuleRecord>(

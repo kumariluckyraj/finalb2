@@ -5,6 +5,8 @@ import type { TransactionType, WalletRecord, WalletTransactionRecord, Membership
 
 const IDEMPOTENCY_NS = "b2w:coins";
 
+const COIN_VALIDITY_DAYS = 90;
+
 function makeIdempotencyKey(prefix: string, uniqueId: string): string {
   return `${IDEMPOTENCY_NS}:${prefix}:${uniqueId}`;
 }
@@ -75,7 +77,7 @@ export async function earnCoins(params: {
       referenceType: params.referenceType ?? null,
       referenceId: params.referenceId ?? null,
       campaignId: params.campaignId ?? null,
-      expiryDate: params.expiryDate ?? null,
+      expiryDate: params.expiryDate ?? new Date(Date.now() + COIN_VALIDITY_DAYS * 24 * 60 * 60 * 1000),
       description: params.description ?? `Earned ${adjustedAmount} coins`,
       idempotencyKey,
     });
@@ -102,8 +104,10 @@ export async function redeemCoins(params: {
   description?: string;
   idempotencyKey?: string;
 }): Promise<{ transaction: WalletTransactionRecord; coinDiscount: number; remainingAmount: number }> {
-  const key = params.idempotencyKey ?? makeIdempotencyKey("redeem", `${params.referenceType ?? "generic"}:${params.referenceId ?? "unknown"}:${params.userId}`);
+  await expireUserCoins(params.userId); // sweep expired coins BEFORE checking balance
 
+  const key = params.idempotencyKey ?? makeIdempotencyKey("redeem", `${params.referenceType ?? "generic"}:${params.referenceId ?? "unknown"}:${params.userId}`);
+  // ...rest of the function is unchanged
   const existing = await coinRepo.getTransactionByIdempotencyKey(key);
   if (existing) {
     const remaining = await coinRepo.getOrCreateWallet(params.userId);
@@ -222,6 +226,58 @@ export async function expireCoins(userId: string, amount: number, description?: 
     });
   });
 }
+
+
+export async function expireUserCoins(userId: string): Promise<number> {
+  const { rows: earnTxs } = await query<{ id: string; amount: number }>(
+    `SELECT id, amount
+     FROM wallet_transactions
+     WHERE user_id = $1
+       AND type IN ('earn', 'promotional_credit')
+       AND expiry_date IS NOT NULL
+       AND expiry_date <= now()
+     ORDER BY created_at ASC`,
+    [userId]
+  );
+
+  let totalExpired = 0;
+
+  for (const earnTx of earnTxs) {
+    const idempotencyKey = `expire:${earnTx.id}`;
+    const already = await coinRepo.getTransactionByIdempotencyKey(idempotencyKey);
+    if (already) continue; // this batch was already expired, skip it
+
+    await withTransaction(async () => {
+      const wallet = await coinRepo.getOrCreateWallet(userId);
+      const expireAmount = Math.min(Number(earnTx.amount), wallet.balance);
+      if (expireAmount <= 0) return;
+
+      await coinRepo.updateWalletBalance(wallet.id, -expireAmount, "balance");
+      await coinRepo.updateWalletBalance(wallet.id, expireAmount, "lifetimeExpired");
+      const updatedWallet = await coinRepo.getWalletById(wallet.id);
+      if (!updatedWallet) throw new Error("Wallet not found");
+
+      await coinRepo.createTransaction({
+        walletId: wallet.id,
+        userId,
+        type: "expire",
+        amount: expireAmount,
+        balanceBefore: wallet.balance,
+        balanceAfter: updatedWallet.balance,
+        source: "expiry",
+        referenceType: "earn_transaction",
+        referenceId: earnTx.id,
+        description: `${expireAmount} coins expired (90-day validity)`,
+        idempotencyKey,
+      });
+
+      totalExpired += expireAmount;
+    });
+  }
+
+  return totalExpired;
+}
+
 
 export async function checkAndUpgradeTier(userId: string): Promise<MembershipTierRecord | null> {
   const tiers = await coinRepo.getMembershipTiers();
