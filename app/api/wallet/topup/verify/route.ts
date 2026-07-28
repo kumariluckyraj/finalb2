@@ -8,6 +8,8 @@ import {
   getTransactionByIdempotencyKey,
 } from "@/postgres/repositories/coins";
 
+const COIN_VALIDITY_DAYS = 90;
+
 function verifySignature(orderId: string, paymentId: string, signature: string) {
   const expected = crypto
     .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
@@ -58,6 +60,7 @@ export async function POST(req: NextRequest) {
       referenceId: razorpayPaymentId,
       description: `Purchased ${amount} SuperCoins`,
       idempotencyKey,
+      expiryDate: new Date(Date.now() + COIN_VALIDITY_DAYS * 24 * 60 * 60 * 1000),
     });
 
     return NextResponse.json({ success: true, balance: updated.balance });

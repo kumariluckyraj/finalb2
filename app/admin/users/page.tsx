@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { Search, Trash2, Shield, User, Store } from "lucide-react";
-
+import { Search, Trash2, Shield, User, Store, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 interface AdminUser {
   id: string;
   name: string;
@@ -50,6 +50,32 @@ export default function AdminUsersPage() {
     setDeleting(null);
   };
 
+ const handleExportXLSX = () => {
+  const data = filtered.map((u) => ({
+    Name: u.name,
+    Email: u.email,
+    Phone: u.phone ? `\u200B${u.phone}` : "", // forces text, prevents E+09 notation
+    Role: u.role,
+    Orders: Number(u.orderCount),
+    Joined: new Date(u.createdAt).toLocaleDateString("en-IN"),
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+
+  // Set sensible column widths so nothing shows as #####
+  worksheet["!cols"] = [
+    { wch: 22 }, // Name
+    { wch: 28 }, // Email
+    { wch: 16 }, // Phone
+    { wch: 12 }, // Role
+    { wch: 10 }, // Orders
+    { wch: 14 }, // Joined
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+  XLSX.writeFile(workbook, `users-export-${Date.now()}.xlsx`);
+};
   const filtered = users.filter((u) => {
     const matchesSearch =
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -75,22 +101,31 @@ export default function AdminUsersPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-b2w-navy">Users</h1>
-          <p className="text-sm text-b2w-muted mt-0.5">{users.length} registered users</p>
-        </div>
-        <div className="relative max-w-xs w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-b2w-muted" />
-          <input
-            type="text"
-            placeholder="Search users..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 rounded-lg border border-b2w-border text-sm bg-white text-b2w-navy focus:outline-none focus:ring-2 focus:ring-b2w-brand/20 focus:border-b2w-brand"
-          />
-        </div>
-      </div>
+     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+  <div>
+    <h1 className="text-xl md:text-2xl font-bold text-b2w-navy">Users</h1>
+    <p className="text-sm text-b2w-muted mt-0.5">{users.length} registered users</p>
+  </div>
+  <div className="flex items-center gap-2 w-full sm:w-auto">
+    <div className="relative max-w-xs w-full">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-b2w-muted" />
+      <input
+        type="text"
+        placeholder="Search users..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-full pl-9 pr-3 py-2 rounded-lg border border-b2w-border text-sm bg-white text-b2w-navy focus:outline-none focus:ring-2 focus:ring-b2w-brand/20 focus:border-b2w-brand"
+      />
+    </div>
+   <button
+  onClick={handleExportXLSX}
+  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-b2w-navy text-white hover:opacity-90 transition cursor-pointer shrink-0"
+>
+  <Download className="w-4 h-4" />
+  Export
+</button>
+  </div>
+</div>
 
       <div className="flex gap-2 mb-4 flex-wrap">
         {(["all", "customer", "vendor", "admin"] as const).map((f) => (

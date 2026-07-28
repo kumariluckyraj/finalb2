@@ -21,17 +21,19 @@ export default function WalletPage() {
   const [customAmount, setCustomAmount] = useState("");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+const [expiringSoon, setExpiringSoon] = useState<{ amount: number; expiryDate: string } | null>(null);
 
-  const load = () => {
-    setLoading(true);
-    fetch("/api/wallet")
-      .then((r) => r.json())
-      .then((d) => {
-        setBalance(d.balance ?? 0);
-        setTransactions(d.transactions ?? []);
-      })
-      .finally(() => setLoading(false));
-  };
+const load = () => {
+  setLoading(true);
+  fetch("/api/wallet")
+    .then((r) => r.json())
+    .then((d) => {
+      setBalance(d.balance ?? 0);
+      setTransactions(d.transactions ?? []);
+      setExpiringSoon(d.expiringSoon ?? null);
+    })
+    .finally(() => setLoading(false));
+};
 
   useEffect(() => { load(); }, []);
 
@@ -132,6 +134,14 @@ export default function WalletPage() {
             </p>
           )}
           <p style={{ margin: "6px 0 0", fontSize: 12, color: b2w.muted }}>1 SuperCoin = ₹1</p>
+          {expiringSoon && (
+  <p style={{ margin: "10px 0 0", fontSize: 12, color: b2w.red, fontWeight: 600 }}>
+    ⚠ {expiringSoon.amount.toLocaleString("en-IN")} coins expire on{" "}
+    {new Date(expiringSoon.expiryDate).toLocaleDateString("en-IN", {
+      day: "numeric", month: "short", year: "numeric",
+    })}
+  </p>
+)}
         </div>
 
         {/* Buy coins */}
