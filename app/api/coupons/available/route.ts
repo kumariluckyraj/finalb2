@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listActiveCouponsPublic } from "@/postgres/repositories/coupons";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
-    const coupons = await listActiveCouponsPublic();
+    const productId = req.nextUrl.searchParams.get("productId") ?? undefined;
+    const coupons = await listActiveCouponsPublic(productId);
 
     const publicCoupons = coupons.map((c) => ({
       id: c.id,
@@ -18,6 +19,8 @@ export async function GET(_req: NextRequest) {
       usageCount: c.usageCount,
       endsAt: c.endsAt,
       startsAt: c.startsAt,
+      productId: c.productId,     // NEW — null means platform-wide
+      bankCodes: c.bankCodes,     // NEW — null means no bank restriction
     }));
 
     return NextResponse.json({ coupons: publicCoupons });

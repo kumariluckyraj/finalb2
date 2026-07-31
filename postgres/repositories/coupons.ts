@@ -4,34 +4,33 @@ import type { CouponRecord, CreateCouponInput } from "../models/Coupon";
 
 const couponSelect = `
   SELECT
-    id,
-    scope,
-    creator_id AS "creatorId",
-    code,
-    title,
-    description,
-    discount_type AS "discountType",
-    discount_value AS "discountValue",
-    min_cart_value AS "minCartValue",
-    max_discount AS "maxDiscount",
-    is_reimbursed AS "isReimbursed",
-    usage_limit AS "usageLimit",
-    usage_count AS "usageCount",
-    per_user_limit AS "perUserLimit",
-    starts_at AS "startsAt",
-    ends_at AS "endsAt",
-    is_active AS "isActive",
-    created_at AS "createdAt",
-    updated_at AS "updatedAt"
+    id, scope, creator_id AS "creatorId", code, title, description,
+    discount_type AS "discountType", discount_value AS "discountValue",
+    min_cart_value AS "minCartValue", max_discount AS "maxDiscount",
+    is_reimbursed AS "isReimbursed", usage_limit AS "usageLimit",
+    usage_count AS "usageCount", per_user_limit AS "perUserLimit",
+    starts_at AS "startsAt", ends_at AS "endsAt", is_active AS "isActive",
+    product_id AS "productId", bank_codes AS "bankCodes",
+    created_at AS "createdAt", updated_at AS "updatedAt"
   FROM coupons
 `;
 
 export async function createCoupon(input: CreateCouponInput): Promise<CouponRecord> {
   const { rows } = await query<CouponRecord>(
     `
-      INSERT INTO coupons (id, scope, creator_id, code, title, description, discount_type, discount_value, min_cart_value, max_discount, is_reimbursed, usage_limit, per_user_limit, starts_at, ends_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-      RETURNING id, scope, creator_id AS "creatorId", code, title, description, discount_type AS "discountType", discount_value AS "discountValue", min_cart_value AS "minCartValue", max_discount AS "maxDiscount", is_reimbursed AS "isReimbursed", usage_limit AS "usageLimit", usage_count AS "usageCount", per_user_limit AS "perUserLimit", starts_at AS "startsAt", ends_at AS "endsAt", is_active AS "isActive", created_at AS "createdAt", updated_at AS "updatedAt"
+      INSERT INTO coupons (
+        id, scope, creator_id, code, title, description, discount_type, discount_value,
+        min_cart_value, max_discount, is_reimbursed, usage_limit, per_user_limit,
+        starts_at, ends_at, product_id, bank_codes
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      RETURNING id, scope, creator_id AS "creatorId", code, title, description,
+        discount_type AS "discountType", discount_value AS "discountValue",
+        min_cart_value AS "minCartValue", max_discount AS "maxDiscount",
+        is_reimbursed AS "isReimbursed", usage_limit AS "usageLimit", usage_count AS "usageCount",
+        per_user_limit AS "perUserLimit", starts_at AS "startsAt", ends_at AS "endsAt",
+        is_active AS "isActive", product_id AS "productId", bank_codes AS "bankCodes",
+        created_at AS "createdAt", updated_at AS "updatedAt"
     `,
     [
       randomUUID(), input.scope, input.creatorId, input.code, input.title,
@@ -39,6 +38,7 @@ export async function createCoupon(input: CreateCouponInput): Promise<CouponReco
       input.minCartValue ?? null, input.maxDiscount ?? null,
       input.isReimbursed ?? false, input.usageLimit ?? null,
       input.perUserLimit ?? 1, input.startsAt, input.endsAt,
+      input.productId ?? null, input.bankCodes ?? null,
     ]
   );
   return rows[0];
@@ -57,25 +57,29 @@ export async function findActiveCouponByCode(code: string): Promise<CouponRecord
   return rows[0] ?? null;
 }
 
-export async function listCoupons(scope?: string): Promise<CouponRecord[]> {
-  if (scope) {
-    const { rows } = await query<CouponRecord>(`${couponSelect} WHERE scope = $1 ORDER BY created_at DESC`, [scope]);
-    return rows;
-  }
-  const { rows } = await query<CouponRecord>(`${couponSelect} ORDER BY created_at DESC`);
+export async function listCoupons(scope?: string, creatorId?: string): Promise<CouponRecord[]> {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  if (scope) { values.push(scope); conditions.push(`scope = $${values.length}`); }
+  if (creatorId) { values.push(creatorId); conditions.push(`creator_id = $${values.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const { rows } = await query<CouponRecord>(`${couponSelect} ${where} ORDER BY created_at DESC`, values);
   return rows;
 }
 
-export async function listActiveCouponsPublic(): Promise<CouponRecord[]> {
+export async function listActiveCouponsPublic(productId?: string): Promise<CouponRecord[]> {
   const { rows } = await query<CouponRecord>(
     `${couponSelect}
      WHERE is_active = true
        AND starts_at <= now()
        AND ends_at >= now()
        AND (usage_limit IS NULL OR usage_count < usage_limit)
-     ORDER BY ends_at ASC`
+       AND (product_id IS NULL OR product_id = $1)
+     ORDER BY ends_at ASC`,
+    [productId ?? null]
   );
   return rows;
+
 }
 
 export async function listCouponsByCreator(creatorId: string): Promise<CouponRecord[]> {

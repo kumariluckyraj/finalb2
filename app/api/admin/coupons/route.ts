@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       perUserLimit: body.perUserLimit ?? 1,
       startsAt: new Date(body.startsAt),
       endsAt: new Date(body.endsAt),
+      bankCodes: body.bankCodes?.length ? body.bankCodes : null,
     });
     return NextResponse.json({ coupon }, { status: 201 });
   } catch {

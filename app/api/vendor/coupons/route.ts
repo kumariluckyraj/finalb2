@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/jwt";
 import { createCoupon, listCoupons } from "@/postgres/repositories/coupons";
-import { findSellerProfileByUserId } from "@/postgres/repositories/sellerProfiles";
 import { query } from "@/postgres/lib/db";
 
 function getTokenFromRequest(req: NextRequest): string | undefined {
@@ -15,32 +14,13 @@ function getTokenFromRequest(req: NextRequest): string | undefined {
 export async function GET(req: NextRequest) {
   try {
     const token = getTokenFromRequest(req);
-
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const user = await verifyToken(token);
+    if (user.role !== "vendor") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (user.role !== "vendor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const profile = await findSellerProfileByUserId(user.userId);
-
-    if (!profile) {
-      return NextResponse.json({ error: "Not a seller" }, { status: 404 });
-    }
-
-    console.log("DEBUG fetching coupons for profile.id:", profile.id);
-
-    const coupons = await listCoupons("seller", profile.id);
-
-    console.log("DEBUG coupons found:", coupons.length);
-
+    const coupons = await listCoupons("vendor", user.userId);
     return NextResponse.json({ coupons });
-  } catch (err) {
-    console.error("GET /api/seller/coupons error:", err);
+  } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
@@ -52,9 +32,6 @@ export async function POST(req: NextRequest) {
     const user = await verifyToken(token);
     if (user.role !== "vendor") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const profile = await findSellerProfileByUserId(user.userId);
-    if (!profile) return NextResponse.json({ error: "Not a seller" }, { status: 404 });
-
     const body = await req.json();
     if (!body.productId) {
       return NextResponse.json({ error: "productId is required for vendor coupons" }, { status: 400 });
@@ -64,15 +41,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Ownership check — vendor can only create a coupon for their own product
-    // NOTE: seller_products.seller_id stores the seller PROFILE id, not the user id
+   // Ownership check — vendor can only create a coupon for their own product
     console.log("DEBUG ownership check params:", {
       productId: body.productId,
-      sellerProfileId: profile.id,
+      userId: user.userId,
     });
 
     const { rows } = await query<{ id: string }>(
       `SELECT id FROM seller_products WHERE id = $1 AND seller_id = $2 LIMIT 1`,
-      [body.productId, profile.id]
+      [body.productId, user.userId]
     );
 
     console.log("DEBUG ownership check result:", rows);
@@ -80,9 +57,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Product not found or not owned by you" }, { status: 403 });
     }
 
-   const coupon = await createCoupon({
-      scope: "seller",  // was "vendor" — DB constraint only allows valid scope values like 'seller'/'admin'
-      creatorId: profile.id,
+    const coupon = await createCoupon({
+      scope: "vendor",
+      creatorId: user.userId,
       code: body.code.toUpperCase().trim(),
       title: body.title,
       description: body.description,
