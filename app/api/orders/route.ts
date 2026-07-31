@@ -75,7 +75,13 @@ export async function POST(req: NextRequest) {
       }
 
       if (itemsToProcess.length === 0) throw new RouteError("No items to process", 400);
-      if (itemsToProcess.length === 0) throw new RouteError("No items to process", 400);
+
+      // ── Sanity-check quantities so a bad request can't create an absurd order ──
+      for (const item of itemsToProcess) {
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0 || item.quantity > 20) {
+          throw new RouteError("Invalid quantity", 400);
+        }
+      }
 
       // ── Pre-pass: fetch vendor + price for each item, group by vendor ──
       const itemVendors: { productId: string; quantity: number; size?: string; vendorId: string; price: number }[] = [];
@@ -125,13 +131,12 @@ export async function POST(req: NextRequest) {
       const deliveryFeeTotal = Array.from(vendorDeliveryFee.values()).reduce((a, b) => a + b, 0);
       const deliveryFeeAppliedForVendor = new Set<string>();
 
-     
-
       const createdOrders = [];
       let grandTotal = 0;
       let appliedCoupon: any = null;
       let appliedPromotion: any = null;
       let couponDiscountTotal = 0;
+      let pendingCouponDiscountTotal = 0; // held discount for bank-restricted coupons, not yet applied
 
       for (const item of itemsToProcess) {
         const { rows } = await client.query<ProductRow>(
@@ -170,6 +175,11 @@ export async function POST(req: NextRequest) {
           if (coupon.minCartValue && grandTotal + (productRow.price * item.quantity) < coupon.minCartValue) {
             throw new RouteError(`Minimum cart value of ₹${coupon.minCartValue} required`, 400);
           }
+          // Bank-restricted coupons can only ever be honored via an online payment,
+          // and only once Razorpay confirms which bank was actually used post-payment.
+        if ((coupon.bankCodes?.length ?? 0) > 0 && paymentMethod === "cod") {
+            throw new RouteError("This coupon is only valid for online payments via a specific bank", 400);
+          }
           appliedCoupon = coupon;
         }
 
@@ -203,10 +213,14 @@ export async function POST(req: NextRequest) {
           appliedCoupon = promo;
         }
 
-       const itemTotal = productRow.price * item.quantity;
+        const itemTotal = productRow.price * item.quantity;
         grandTotal += itemTotal;
         let orderTotal = itemTotal;
+        let pendingCouponDiscountForItem = 0;
+
         if (appliedCoupon) {
+          const isBankRestricted = (appliedCoupon.bankCodes?.length ?? 0) > 0;
+
           let discAmt: number;
           if (appliedCoupon.discountType === "percentage") {
             discAmt = itemTotal * (appliedCoupon.discountValue / 100);
@@ -216,8 +230,18 @@ export async function POST(req: NextRequest) {
             discAmt = appliedCoupon.discountValue;
           }
           discAmt = Math.min(discAmt, itemTotal);
-          couponDiscountTotal += discAmt;
-          orderTotal = itemTotal - discAmt;
+
+          if (isBankRestricted) {
+            // Hold the discount — don't subtract it yet. It only gets applied
+            // (via a Razorpay refund) once verify-payment confirms the actual
+            // bank/wallet used matches the coupon's allowed bankCodes.
+            pendingCouponDiscountForItem = discAmt;
+            pendingCouponDiscountTotal += discAmt;
+            // orderTotal stays at full itemTotal for now
+          } else {
+            couponDiscountTotal += discAmt;
+            orderTotal = itemTotal - discAmt;
+          }
         }
 
         let deliveryFeeForThisOrder = 0;
@@ -227,14 +251,15 @@ export async function POST(req: NextRequest) {
         }
         orderTotal = orderTotal + deliveryFeeForThisOrder;
 
-       const { rows: orderRows } = await client.query<OrderRow>(
+        const { rows: orderRows } = await client.query<OrderRow>(
           `
             INSERT INTO orders (
               id, user_id, product_id, vendor_id, quantity, size, address_full_name, address_phone,
               address_line1, address_line2, address_city, address_state, address_pincode,
-              payment_method, payment_status, status, total_amount, delivery_fee
+              payment_method, payment_status, status, total_amount, delivery_fee,
+              pending_coupon_id, pending_coupon_discount
             )
-            VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending', $15, $16)
+            VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending', $15, $16, $17, $18)
             RETURNING id, user_id AS "userId", product_id AS "productId", vendor_id AS "vendorId", quantity, size, address_full_name AS "addressFullName", address_phone AS "addressPhone", address_line1 AS "addressLine1", address_line2 AS "addressLine2", address_city AS "addressCity", address_state AS "addressState", address_pincode AS "addressPincode", payment_method AS "paymentMethod", payment_status AS "paymentStatus", razorpay_order_id AS "razorpayOrderId", razorpay_payment_id AS "razorpayPaymentId", status, total_amount::float8 AS "totalAmount", delivery_fee::float8 AS "deliveryFee", created_at AS "createdAt", updated_at AS "updatedAt"
           `,
           [
@@ -254,6 +279,8 @@ export async function POST(req: NextRequest) {
             "pending",
             orderTotal,
             deliveryFeeForThisOrder,
+          (appliedCoupon?.bankCodes?.length ?? 0) > 0 ? appliedCoupon.id : null,
+            pendingCouponDiscountForItem,
           ]
         );
 
@@ -280,7 +307,10 @@ export async function POST(req: NextRequest) {
         await client.query(`DELETE FROM cart_items WHERE cart_id = $1`, [fromCartCart.id]);
       }
 
-      if (appliedCoupon) {
+      // Only record usage immediately for non-bank-restricted coupons.
+      // Bank-restricted coupon usage is recorded later, in verify-payment,
+      // once the actual payment bank is confirmed.
+     if (appliedCoupon && (appliedCoupon.bankCodes?.length ?? 0) === 0) {
         await client.query(`UPDATE coupons SET usage_count = usage_count + 1, updated_at = now() WHERE id = $1`, [appliedCoupon.id]);
         await client.query(
           `INSERT INTO coupon_usage (id, coupon_id, user_id, order_id, used_count, last_used_at)
@@ -311,6 +341,8 @@ export async function POST(req: NextRequest) {
       let coinDiscountApplied = 0;
 
       if (coinsUsed && coinsUsed > 0) {
+        // Bank-restricted coupon discounts are NOT subtracted here — they're still pending,
+        // so the coin cap is correctly based on the full (undiscounted-for-that-part) total.
         const orderTotalAfterCoupon = grandTotal - couponDiscountTotal + deliveryFeeTotal;
 
         // Re-validate against the real wallet balance server-side — never trust the client's number
@@ -362,15 +394,29 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return { createdOrders, totalAmount: grandTotal - couponDiscountTotal + deliveryFeeTotal - coinDiscountApplied };
+      return {
+        createdOrders,
+        totalAmount: grandTotal - couponDiscountTotal + deliveryFeeTotal - coinDiscountApplied,
+        // Note: pendingCouponDiscountTotal is intentionally NOT subtracted here —
+        // Razorpay charges the full amount, and the discount is refunded post-verification.
+      };
     });
 
     if (paymentMethod === "razorpay") {
-      const rzpOrder = await razorpay.orders.create({
-        amount: totalAmount * 100,
-        currency: "INR",
-        receipt: createdOrders[0].id.toString().slice(0, 40),
-      });
+      let rzpOrder;
+      try {
+        rzpOrder = await razorpay.orders.create({
+          amount: totalAmount * 100,
+          currency: "INR",
+          receipt: createdOrders[0].id.toString().slice(0, 40),
+        });
+      } catch (err: any) {
+        console.error("Razorpay order creation failed:", err?.error ?? err);
+        return NextResponse.json(
+          { error: err?.error?.description || "Payment gateway rejected this order amount" },
+          { status: 502 }
+        );
+      }
 
       for (const order of createdOrders) {
         await query(`UPDATE orders SET razorpay_order_id = $2, updated_at = now() WHERE id = $1`, [order.id, rzpOrder.id]);

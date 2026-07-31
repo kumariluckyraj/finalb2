@@ -1,6 +1,6 @@
 import type { TimestampedRecord } from "./common";
 
-export type CouponScope = "seller" | "platform";
+export type CouponScope = "seller" |"vendor" | "platform";
 export type DiscountType = "percentage" | "fixed";
 
 export interface CouponRecord extends TimestampedRecord {
@@ -21,6 +21,8 @@ export interface CouponRecord extends TimestampedRecord {
   startsAt: Date;
   endsAt: Date;
   isActive: boolean;
+   productId: string | null;      // NEW
+  bankCodes: string[] | null; 
 }
 
 export interface CreateCouponInput {
@@ -38,4 +40,6 @@ export interface CreateCouponInput {
   perUserLimit?: number;
   startsAt: Date;
   endsAt: Date;
+   productId?: string | null;     // NEW
+  bankCodes?: string[] | null; 
 }

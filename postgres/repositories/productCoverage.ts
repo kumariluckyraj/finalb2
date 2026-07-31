@@ -90,7 +90,9 @@ export async function resolvePincodeLocation(
   if (cached.rows.length > 0) return cached.rows[0];
 
   try {
-    const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+   const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`, {
+  signal: AbortSignal.timeout(3000), // fail fast instead of hanging
+});
     const data = await res.json();
     const po = data?.[0]?.PostOffice?.[0];
     if (!po) return null;

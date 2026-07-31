@@ -14,6 +14,7 @@ interface Coupon {
   isActive: boolean;
   startsAt: string;
   endsAt: string;
+  bankCodes: string[] | null;
 }
 
 const pd = {
@@ -23,22 +24,46 @@ const pd = {
   slate: "#363537"
 };
 
+const AVAILABLE_BANKS = ["HDFC", "IDFC", "ICICI", "SBI", "AXIS", "Airtel Payments Bank"];
+
+const emptyForm = {
+  code: "", title: "", description: "", discountType: "percentage",
+  discountValue: "", maxDiscount: "", minCartValue: "",
+  usageLimit: "", perUserLimit: "1", startsAt: "", endsAt: "",
+  bankCodes: [] as string[],
+};
+
 export default function AdminCouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    code: "", title: "", description: "", discountType: "percentage",
-    discountValue: "", maxDiscount: "", minCartValue: "",
-    usageLimit: "", perUserLimit: "1", startsAt: "", endsAt: "",
-  });
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
 
   const fetchCoupons = async () => {
     try {
       const res = await fetch("/api/admin/coupons");
+      if (res.status === 401 || res.status === 403) {
+        setPageError(res.status === 401 ? "You're not logged in." : "You don't have access to this page.");
+        setCoupons([]);
+        setLoading(false);
+        return;
+      }
+      if (!res.ok) {
+        setPageError("Failed to load coupons. Please try again.");
+        setCoupons([]);
+        setLoading(false);
+        return;
+      }
       const data = await res.json();
       setCoupons(data.coupons ?? []);
-    } catch (e) { console.error(e); }
+      setPageError(null);
+    } catch (e) {
+      console.error(e);
+      setPageError("Failed to load coupons. Please try again.");
+    }
     setLoading(false);
   };
 
@@ -46,30 +71,73 @@ export default function AdminCouponsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    await fetch("/api/admin/coupons", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...form,
-        discountValue: parseFloat(form.discountValue),
-        maxDiscount: form.maxDiscount ? parseFloat(form.maxDiscount) : null,
-        minCartValue: form.minCartValue ? parseFloat(form.minCartValue) : null,
-        usageLimit: form.usageLimit ? parseInt(form.usageLimit) : null,
-        perUserLimit: parseInt(form.perUserLimit),
-      }),
-    });
-    setShowForm(false);
-    setForm({ code: "", title: "", description: "", discountType: "percentage", discountValue: "", maxDiscount: "", minCartValue: "", usageLimit: "", perUserLimit: "1", startsAt: "", endsAt: "" });
-    fetchCoupons();
+    if (submitting) return;
+    setSubmitting(true);
+    setFormError(null);
+
+    try {
+      const res = await fetch("/api/admin/coupons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          discountValue: parseFloat(form.discountValue),
+          maxDiscount: form.maxDiscount ? parseFloat(form.maxDiscount) : null,
+          minCartValue: form.minCartValue ? parseFloat(form.minCartValue) : null,
+          usageLimit: form.usageLimit ? parseInt(form.usageLimit) : null,
+          perUserLimit: parseInt(form.perUserLimit),
+          // datetime-local has no timezone info; convert to a real Date
+          // in the browser's local timezone before sending, so the server
+          // doesn't reinterpret the raw string in its own timezone.
+          startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : null,
+          endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
+          bankCodes: form.bankCodes.length ? form.bankCodes : null,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setFormError(data?.error ?? "Failed to create coupon. Please check the fields and try again.");
+        setSubmitting(false);
+        return;
+      }
+
+      setShowForm(false);
+      setForm(emptyForm);
+      await fetchCoupons();
+    } catch (err) {
+      console.error(err);
+      setFormError("Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const toggleActive = async (id: string, current: boolean) => {
-    await fetch(`/api/admin/coupons/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !current }),
-    });
-    fetchCoupons();
+    try {
+      const res = await fetch(`/api/admin/coupons/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !current }),
+      });
+      if (!res.ok) {
+        setPageError("Failed to update coupon status.");
+        return;
+      }
+      fetchCoupons();
+    } catch (e) {
+      console.error(e);
+      setPageError("Failed to update coupon status.");
+    }
+  };
+
+  const toggleBank = (bank: string) => {
+    setForm(f => ({
+      ...f,
+      bankCodes: f.bankCodes.includes(bank)
+        ? f.bankCodes.filter(b => b !== bank)
+        : [...f.bankCodes, bank],
+    }));
   };
 
   if (loading) return (
@@ -96,6 +164,7 @@ export default function AdminCouponsPage() {
           text-transform: uppercase; letter-spacing: 0.038em; transition: opacity 0.2s;
         }
         .pd-btn:hover { opacity: 0.85; }
+        .pd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .pd-btn-outline {
           background: transparent; color: ${pd.carbonInk}; border: 1px solid ${pd.carbonInk};
           padding: 12px 24px; border-radius: 4px; font-weight: 700; font-size: 14px;
@@ -111,76 +180,108 @@ export default function AdminCouponsPage() {
         }
         .pd-td { padding: 16px; border-bottom: 1px solid ${pd.mist}; vertical-align: top; }
         .pd-tr:hover .pd-td { background: ${pd.fog}; }
+        .pd-label { display: block; margin-bottom: 8px; font-size: 13px; color: ${pd.graphite}; font-weight: 600; }
+        .pd-bank-label { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
       `}</style>
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "64px 24px" }}>
-        
+
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 48, borderBottom: `1px solid ${pd.mist}`, paddingBottom: 24, flexWrap: "wrap", gap: 24 }}>
           <h1 style={{ fontFamily: "var(--font-exposure-style-serif-exposure-10, 'Playfair Display', serif)", fontStyle: "italic", fontSize: "clamp(48px, 6vw, 64px)", letterSpacing: "-0.025em", lineHeight: 1.1, margin: 0, fontWeight: 400 }}>
             Coupons
           </h1>
-          <button onClick={() => setShowForm(!showForm)} className={showForm ? "pd-btn-outline" : "pd-btn"}>
+          <button onClick={() => { setShowForm(!showForm); setFormError(null); }} className={showForm ? "pd-btn-outline" : "pd-btn"}>
             {showForm ? "Cancel" : "+ New Coupon"}
           </button>
         </div>
+
+        {pageError && (
+          <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", padding: "12px 16px", borderRadius: 4, marginBottom: 24, fontSize: 14 }}>
+            {pageError}
+          </div>
+        )}
 
         {showForm && (
           <div style={{ background: pd.paperWhite, border: `1px solid ${pd.mist}`, padding: 32, marginBottom: 48 }}>
             <h2 style={{ fontFamily: "var(--font-exposure-style-serif-exposure-10, 'Playfair Display', serif)", fontSize: 32, margin: "0 0 32px", fontWeight: 400 }}>
               Create New Coupon
             </h2>
+
+            {formError && (
+              <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", padding: "12px 16px", borderRadius: 4, marginBottom: 24, fontSize: 14 }}>
+                {formError}
+              </div>
+            )}
+
             <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Code</label>
-                  <input className="pd-input" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} required />
+                  <label className="pd-label" htmlFor="code">Code</label>
+                  <input id="code" className="pd-input" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} required />
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Title</label>
-                  <input className="pd-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
+                  <label className="pd-label" htmlFor="title">Title</label>
+                  <input id="title" className="pd-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
                 </div>
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Description</label>
-                  <input className="pd-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+                  <label className="pd-label" htmlFor="description">Description</label>
+                  <input id="description" className="pd-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Discount Type</label>
-                  <select className="pd-input" value={form.discountType} onChange={e => setForm({ ...form, discountType: e.target.value })}>
+                  <label className="pd-label" htmlFor="discountType">Discount Type</label>
+                  <select id="discountType" className="pd-input" value={form.discountType} onChange={e => setForm({ ...form, discountType: e.target.value })}>
                     <option value="percentage">Percentage</option>
                     <option value="fixed">Fixed (₹)</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Discount Value</label>
-                  <input className="pd-input" type="number" value={form.discountValue} onChange={e => setForm({ ...form, discountValue: e.target.value })} required />
+                  <label className="pd-label" htmlFor="discountValue">Discount Value</label>
+                  <input id="discountValue" className="pd-input" type="number" value={form.discountValue} onChange={e => setForm({ ...form, discountValue: e.target.value })} required />
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Max Discount (cap, for % only)</label>
-                  <input className="pd-input" type="number" value={form.maxDiscount} onChange={e => setForm({ ...form, maxDiscount: e.target.value })} />
+                  <label className="pd-label" htmlFor="maxDiscount">Max Discount (cap, for % only)</label>
+                  <input id="maxDiscount" className="pd-input" type="number" value={form.maxDiscount} onChange={e => setForm({ ...form, maxDiscount: e.target.value })} />
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Min Cart Value</label>
-                  <input className="pd-input" type="number" value={form.minCartValue} onChange={e => setForm({ ...form, minCartValue: e.target.value })} />
+                  <label className="pd-label" htmlFor="minCartValue">Min Cart Value</label>
+                  <input id="minCartValue" className="pd-input" type="number" value={form.minCartValue} onChange={e => setForm({ ...form, minCartValue: e.target.value })} />
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Usage Limit (Total)</label>
-                  <input className="pd-input" type="number" value={form.usageLimit} onChange={e => setForm({ ...form, usageLimit: e.target.value })} />
+                  <label className="pd-label" htmlFor="usageLimit">Usage Limit (Total)</label>
+                  <input id="usageLimit" className="pd-input" type="number" value={form.usageLimit} onChange={e => setForm({ ...form, usageLimit: e.target.value })} />
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Per-User Limit</label>
-                  <input className="pd-input" type="number" value={form.perUserLimit} onChange={e => setForm({ ...form, perUserLimit: e.target.value })} />
+                  <label className="pd-label" htmlFor="perUserLimit">Per-User Limit</label>
+                  <input id="perUserLimit" className="pd-input" type="number" value={form.perUserLimit} onChange={e => setForm({ ...form, perUserLimit: e.target.value })} />
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>Start Date (ISO)</label>
-                  <input className="pd-input" type="datetime-local" value={form.startsAt} onChange={e => setForm({ ...form, startsAt: e.target.value })} required />
+                  <label className="pd-label" htmlFor="startsAt">Start Date</label>
+                  <input id="startsAt" className="pd-input" type="datetime-local" value={form.startsAt} onChange={e => setForm({ ...form, startsAt: e.target.value })} required />
                 </div>
                 <div>
-                  <label style={{ display: "block", marginBottom: 8, fontSize: 13, color: pd.graphite, fontWeight: 600 }}>End Date (ISO)</label>
-                  <input className="pd-input" type="datetime-local" value={form.endsAt} onChange={e => setForm({ ...form, endsAt: e.target.value })} required />
+                  <label className="pd-label" htmlFor="endsAt">End Date</label>
+                  <input id="endsAt" className="pd-input" type="datetime-local" value={form.endsAt} onChange={e => setForm({ ...form, endsAt: e.target.value })} required />
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label className="pd-label">Restrict to Banks (leave empty for all cards)</label>
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                    {AVAILABLE_BANKS.map(bank => (
+                      <label key={bank} className="pd-bank-label">
+                        <input
+                          type="checkbox"
+                          checked={form.bankCodes.includes(bank)}
+                          onChange={() => toggleBank(bank)}
+                        />
+                        {bank}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div style={{ marginTop: 16 }}>
-                <button type="submit" className="pd-btn">Create Coupon</button>
+                <button type="submit" className="pd-btn" disabled={submitting}>
+                  {submitting ? "Creating..." : "Create Coupon"}
+                </button>
               </div>
             </form>
           </div>
@@ -209,6 +310,13 @@ export default function AdminCouponsPage() {
                       {c.discountType === "percentage" ? `${c.discountValue}%` : `₹${c.discountValue}`}
                     </p>
                     {c.maxDiscount && <p style={{ margin: 0, fontSize: 12, color: pd.graphite }}>Up to ₹{c.maxDiscount}</p>}
+                    {c.bankCodes?.length ? (
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: pd.carbonInk, fontWeight: 600 }}>
+                        {c.bankCodes.join(", ")} only
+                      </p>
+                    ) : (
+                      <p style={{ margin: "4px 0 0", fontSize: 12, color: pd.graphite }}>All cards</p>
+                    )}
                   </td>
                   <td className="pd-td">
                     <p style={{ margin: 0, fontSize: 14, color: pd.carbonInk, fontFamily: "var(--font-geist-mono, monospace)" }}>

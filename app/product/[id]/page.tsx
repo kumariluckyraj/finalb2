@@ -163,7 +163,15 @@ export default function ProductDetail() {
 
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
   const [recentProducts, setRecentProducts] = useState<any[]>([]);
+const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
 
+useEffect(() => {
+  if (!product?._id) return;
+  fetch(`/api/coupons/available?productId=${product._id}`)
+    .then(r => r.json())
+    .then(d => setAvailableCoupons(d.coupons || []))
+    .catch(() => {});
+}, [product?._id]);
   // ── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetch(`/api/products/detail/${params.id}`)
@@ -609,6 +617,25 @@ export default function ProductDetail() {
               </p>
             )}
 
+{availableCoupons.length > 0 && (
+  <div className="mb-8 border-t border-[#e0e0e0] pt-6">
+    <span className="block text-[14px] font-bold uppercase tracking-[0.057em] text-[#1a211e] mb-3">
+      Available Offers
+    </span>
+    <div className="flex flex-col gap-2">
+      {availableCoupons.map((c) => (
+        <div key={c.id} className="flex items-start gap-2 text-[13px] text-[#1a211e]">
+          <span className="font-bold">{c.code}</span>
+          <span className="text-[#606562]">
+            — {c.discountType === "percentage" ? `${c.discountValue}% off` : `₹${c.discountValue} off`}
+            {c.bankCodes?.length ? ` on ${c.bankCodes.join("/")} cards` : ""}
+            {c.productId ? " (this product)" : ""}
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
             <div className="mt-4 flex items-center gap-3 text-[12px] font-bold uppercase tracking-[0.057em]">
               <span className={inStock ? "text-[#1a211e]" : "text-[#cc2e39]"}>
                 {stockValue === null ? "Available" : inStock ? "In Stock" : "Out of Stock"}

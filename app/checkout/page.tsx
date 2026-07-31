@@ -301,7 +301,8 @@ function CheckoutContent() {
   const [couponError, setCouponError] = useState("");
   const [applyingCoupon, setApplyingCoupon] = useState(false);
   const [pincodeLoading, setPincodeLoading] = useState(false);
-
+  const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
+  const [selectedBankCode, setSelectedBankCode] = useState("");
   const [addresses, setAddresses] = useState<any[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [isAddingNewAddress, setIsAddingNewAddress] = useState(false);
@@ -317,6 +318,16 @@ function CheckoutContent() {
   useEffect(() => { languageRef.current = language; }, [language]);
   const translateRef = useRef(translate);
   useEffect(() => { translateRef.current = translate; }, [translate]);
+
+
+  useEffect(() => {
+  if (!productId) return;
+  fetch(`/api/coupons/available?productId=${productId}`)
+    .then(r => r.json())
+    .then(d => setAvailableCoupons(d.coupons || []))
+    .catch(() => {});
+}, [productId]);
+
 
   // ── Data fetch ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -416,7 +427,12 @@ function CheckoutContent() {
   const deliveryFee = subtotal >= freeShippingThreshold ? 0 : deliveryCharge;
   const discount = totalActual - subtotal;
   const coinDiscount = coinRedeemEnabled ? Math.min(coinRedeemAmount, subtotal + deliveryFee) : 0;
-  const total = Math.max(0, subtotal + deliveryFee - coinDiscount - couponDiscount);
+
+  // Bank-restricted coupons are only ever honored post-payment, once Razorpay
+  // confirms the actual bank/wallet used. Until then, the discount is "pending"
+  // and must NOT be subtracted from what's actually charged.
+  const isBankRestrictedPending = (appliedCoupon?.bankCodes?.length ?? 0) > 0;
+  const total = Math.max(0, subtotal + deliveryFee - coinDiscount - (isBankRestrictedPending ? 0 : couponDiscount));
   const totalItemsCount = fromCart ? cartItems.reduce((s, i) => s + i.quantity, 0) : quantity;
 
   // ── Coin data fetch ────────────────────────────────────────────────────────
@@ -438,14 +454,59 @@ function CheckoutContent() {
     }
   }, [storeSettings, paymentMethod]);
 
-  const placeOrder = async () => {
-    setPlacing(true);
-    const coinsUsed = coinRedeemEnabled ? coinRedeemAmount : 0;
+  // Bank-restricted coupons can't survive a switch to COD — there's no bank to verify.
+  useEffect(() => {
+    if (paymentMethod === "cod" && (appliedCoupon?.bankCodes?.length ?? 0) > 0) {
+      setAppliedCoupon(null);
+      setCouponDiscount(0);
+      setCouponCode("");
+      setCouponError("This coupon isn't valid for Cash on Delivery — pay online with the required bank to use it.");
+    }
+  }, [paymentMethod, appliedCoupon]);
+
+  // ── Coupon apply (manual entry + "Available Coupons" quick-apply) ──────────
+  const applyCoupon = async (code: string) => {
+    setApplyingCoupon(true);
+    setCouponError("");
+    try {
+      const url = `/api/coupons?code=${encodeURIComponent(code)}&cartTotal=${subtotal}` +
+        (productId ? `&productId=${productId}` : "") +
+        (selectedBankCode ? `&bankCode=${selectedBankCode}` : "");
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) { setCouponError(data.error); return; }
+
+      // Bank-restricted coupons can never apply on COD — no bank info exists to verify against
+      if ((data.coupon.bankCodes?.length ?? 0) > 0 && paymentMethod === "cod") {
+        setCouponError("This coupon requires online payment via a specific bank.");
+        return;
+      }
+
+      setAppliedCoupon(data.coupon);
+      setCouponDiscount(data.discountAmount);
+      setCouponCode(data.coupon.code);
+    } catch {
+      setCouponError("Failed to validate coupon");
+    } finally {
+      setApplyingCoupon(false);
+    }
+  };
+
+ const placeOrder = async () => {
+  setPlacing(true);
+  const coinsUsed = coinRedeemEnabled ? coinRedeemAmount : 0;
+  try {
     const res = await fetch("/api/orders", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ productId, quantity, address, paymentMethod, size, fromCart, coinsUsed, couponId: appliedCoupon?.id ?? null }),
     });
     const data = await res.json();
+
+    if (!res.ok) {
+      setPlacing(false);
+      alert(data?.error || "Failed to place order. Please try again.");
+      return;
+    }
 
     if (paymentMethod === "razorpay" && data.razorpayOrderId) {
       const script = document.createElement("script");
@@ -458,19 +519,37 @@ function CheckoutContent() {
           currency: "INR", order_id: data.razorpayOrderId, name: "Your Store",
           description: "Order Payment", prefill: { contact: phone },
           handler: async (response: any) => {
-            await fetch("/api/orders/verify-payment", {
+            const verifyRes = await fetch("/api/orders/verify-payment", {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ orderId: data.orderId, razorpayPaymentId: response.razorpay_payment_id }),
+              body: JSON.stringify({
+                orderId: data.orderId,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpaySignature: response.razorpay_signature,
+              }),
             });
+            if (!verifyRes.ok) {
+              alert("Payment verification failed. If money was deducted, it will be refunded automatically.");
+              return;
+            }
             setOrderDone(true);
           },
         });
         rzp.open();
       };
-    } else {
+    } else if (paymentMethod === "cod") {
       setOrderDone(true);
+    } else {
+      // razorpay expected but no razorpayOrderId came back — treat as failure, not success
+      setPlacing(false);
+      alert("Could not start payment. Please try again.");
     }
-  };
+  } catch (err) {
+    console.error("placeOrder failed:", err);
+    setPlacing(false);
+    alert("Something went wrong placing your order. Please try again.");
+  }
+};
 
   // ── Styles ─────────────────────────────────────────────────────────────────
   const inputStyle: React.CSSProperties = {
@@ -808,6 +887,26 @@ function CheckoutContent() {
                   ))}
                 </div>
 
+                {/* Bank offer selector (only relevant for online payment) */}
+                {paymentMethod === "razorpay" && (
+                  <div style={{ margin: "0 24px 20px" }}>
+                    <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: b2w.navy }}>Paying with a specific bank card?</p>
+                    <select
+                      value={selectedBankCode}
+                      onChange={e => setSelectedBankCode(e.target.value)}
+                      style={{ width: "100%", padding: "10px 12px", border: `1px solid ${b2w.border}`, borderRadius: 6, fontSize: 14 }}
+                    >
+                      <option value="">No bank offer</option>
+                      <option value="HDFC">HDFC Bank</option>
+                      <option value="IDFC">IDFC First Bank</option>
+                      <option value="ICICI">ICICI Bank</option>
+                      <option value="SBI">State Bank of India</option>
+                      <option value="AXIS">Axis Bank</option>
+                      <option value="Airtel Payments Bank">Airtel Payments Bank</option>
+                    </select>
+                  </div>
+                )}
+
                 {/* Product mini summary */}
                 {fromCart ? (
                   <div style={{ margin: "0 24px 20px", padding: "14px 16px", background: "#fafafa", borderRadius: 12, border: `1px solid ${b2w.border}` }}>
@@ -912,6 +1011,33 @@ function CheckoutContent() {
             </div>
           )}
 
+          {/* Available coupons (quick-apply) */}
+          {availableCoupons.length > 0 && !appliedCoupon && (
+            <div style={{ background: b2w.white, borderRadius: 8, border: `1px solid ${b2w.border}`, padding: 16, marginBottom: 12 }}>
+              <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: b2w.navy }}>Available Coupons</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {availableCoupons.map((c) => (
+                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${b2w.border}`, borderRadius: 6, padding: "10px 12px" }}>
+                    <div>
+                      <strong style={{ fontSize: 13 }}>{c.code}</strong>
+                      <p style={{ margin: "2px 0 0", fontSize: 12, color: b2w.muted }}>
+                        {c.discountType === "percentage" ? `${c.discountValue}% off` : `₹${c.discountValue} off`}
+                        {c.bankCodes?.length ? ` · ${c.bankCodes.join("/")} cards only` : ""}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => applyCoupon(c.code)}
+                      disabled={applyingCoupon}
+                      style={{ padding: "6px 14px", background: b2w.teal, color: "#fff", border: "none", borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Coupon code */}
           <div style={{ background: b2w.white, borderRadius: 8, border: `1px solid ${b2w.border}`, padding: 16, marginBottom: 12 }}>
             <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: b2w.navy }}>Have a coupon?</p>
@@ -919,7 +1045,10 @@ function CheckoutContent() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#ecfdf5", padding: "10px 14px", borderRadius: 6, border: "1px solid #a7f3d0" }}>
                 <div>
                   <strong style={{ fontSize: 14, color: "#065f46" }}>{appliedCoupon.code}</strong>
-                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "#065f46" }}>{appliedCoupon.title} - ₹{couponDiscount} off</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "#065f46" }}>
+                    {appliedCoupon.title} - ₹{couponDiscount} off
+                    {isBankRestrictedPending && ` (refunded after payment via ${appliedCoupon.bankCodes.join("/")})`}
+                  </p>
                 </div>
                 <button onClick={() => { setAppliedCoupon(null); setCouponDiscount(0); setCouponCode(""); }}
                   style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
@@ -936,18 +1065,7 @@ function CheckoutContent() {
                 />
                 <button
                   disabled={!couponCode || applyingCoupon}
-                  onClick={async () => {
-                    setApplyingCoupon(true);
-                    setCouponError("");
-                    try {
-                      const res = await fetch(`/api/coupons?code=${encodeURIComponent(couponCode)}&cartTotal=${subtotal}`);
-                      const data = await res.json();
-                      if (!res.ok) { setCouponError(data.error); return; }
-                      setAppliedCoupon(data.coupon);
-                      setCouponDiscount(data.discountAmount);
-                    } catch { setCouponError("Failed to validate coupon"); }
-                    finally { setApplyingCoupon(false); }
-                  }}
+                  onClick={() => applyCoupon(couponCode)}
                   style={{ padding: "10px 18px", background: "#1a211e", color: "#fff", border: "none", borderRadius: 6, fontWeight: 600, cursor: couponCode && !applyingCoupon ? "pointer" : "not-allowed", opacity: couponCode && !applyingCoupon ? 1 : 0.5 }}>
                   Apply
                 </button>
@@ -965,7 +1083,13 @@ function CheckoutContent() {
                 { label: `${t("priceItem")} (${totalItemsCount} ${totalItemsCount > 1 ? t("items") : t("item")})`, value: `₹${subtotal.toLocaleString("en-IN")}`, color: b2w.navy },
                 { label: t("discount"), value: discount > 0 ? `-₹${discount.toLocaleString("en-IN")}` : "-", color: discount > 0 ? b2w.green : b2w.muted },
                 ...(coinDiscount > 0 ? [{ label: "Coin Discount", value: `-₹${coinDiscount}`, color: b2w.teal }] : []),
-                ...(couponDiscount > 0 ? [{ label: `Coupon (${appliedCoupon?.code ?? ""})`, value: `-₹${couponDiscount}`, color: "#1a211e" }] : []),
+                ...(couponDiscount > 0 ? [{
+                  label: isBankRestrictedPending
+                    ? `Coupon (${appliedCoupon?.code ?? ""}) — refunded if paid via ${appliedCoupon.bankCodes.join("/")}`
+                    : `Coupon (${appliedCoupon?.code ?? ""})`,
+                  value: isBankRestrictedPending ? `-₹${couponDiscount} (pending)` : `-₹${couponDiscount}`,
+                  color: isBankRestrictedPending ? b2w.muted : "#1a211e",
+                }] : []),
                 { label: t("deliveryCharges"), value: deliveryFee === 0 ? t("free") : `₹${deliveryFee}`, color: deliveryFee === 0 ? b2w.green : b2w.navy },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 0", borderBottom: `1px solid ${b2w.border}` }}>

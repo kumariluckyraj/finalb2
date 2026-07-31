@@ -10,11 +10,25 @@ export async function GET(req: NextRequest) {
 
     const code = req.nextUrl.searchParams.get("code");
     const cartTotal = parseFloat(req.nextUrl.searchParams.get("cartTotal") ?? "0");
+    const productId = req.nextUrl.searchParams.get("productId") ?? undefined;
+    const bankCode = req.nextUrl.searchParams.get("bankCode") ?? undefined;
 
     if (!code) return NextResponse.json({ error: "Code is required" }, { status: 400 });
 
     const coupon = await findActiveCouponByCode(code.toUpperCase().trim());
     if (!coupon) return NextResponse.json({ error: "Invalid or expired coupon code" }, { status: 404 });
+
+    // Product-specific coupon: must match the product being bought
+    if (coupon.productId && coupon.productId !== productId) {
+      return NextResponse.json({ error: "This coupon isn't valid for this product" }, { status: 400 });
+    }
+
+    // Bank-specific coupon: must match selected bank/card
+    if (coupon.bankCodes && coupon.bankCodes.length > 0) {
+      if (!bankCode || !coupon.bankCodes.includes(bankCode)) {
+        return NextResponse.json({ error: "This coupon requires payment with a specific bank card" }, { status: 400 });
+      }
+    }
 
     if (coupon.minCartValue && cartTotal < coupon.minCartValue) {
       return NextResponse.json({ error: `Minimum cart value of ₹${coupon.minCartValue} required` }, { status: 400 });
@@ -44,11 +58,13 @@ export async function GET(req: NextRequest) {
         discountValue: coupon.discountValue,
         maxDiscount: coupon.maxDiscount,
         isReimbursed: coupon.isReimbursed,
+        bankCodes: coupon.bankCodes,
+        productId: coupon.productId,
       },
       discountAmount,
       finalTotal: cartTotal - discountAmount,
     });
-  }  catch (err) {
+  } catch (err) {
     console.error("GET /api/coupons error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
