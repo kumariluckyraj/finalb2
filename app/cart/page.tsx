@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShoppingCart, Truck, Sparkles, ShieldCheck } from "lucide-react";
+import { Truck, Sparkles, ShieldCheck } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import LanguagePicker from "@/components/LanguagePicker";
+import { CartSmiley, getCartMood } from "@/components/CartSmiley";
 
 // ── Default strings — English so the cart is usable if translation fails ──
 const CART_STRINGS = {
@@ -32,6 +33,10 @@ const CART_STRINGS = {
   saveMsg1: "You'll save ₹",
   saveMsg2: " on this order",
   safeCheckoutMsg: "Secure checkout. Easy returns. Authentic gear.",
+  moodEmpty: "Waiting to be filled up!",
+  moodContent: "Off to a good start.",
+  moodHappy: "Now we're talking!",
+  moodEcstatic: "Look at those savings!",
 };
 
 interface CartItem {
@@ -52,7 +57,7 @@ interface CartItem {
 export default function CartPage() {
   const router = useRouter();
   const { t, isTranslating } = useTranslation("cart", CART_STRINGS);
-  
+
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -111,6 +116,16 @@ export default function CartPage() {
   const delivery = subtotal > 499 ? 0 : 40;
   const grandTotal = subtotal + delivery;
 
+  // ── Cart mood ─────────────────────────────────────────────
+  const totalUnits = items.reduce((sum, i) => sum + i.quantity, 0);
+  const mood = getCartMood(totalUnits, totalDiscount);
+  const moodMessage = {
+    empty: t("moodEmpty"),
+    content: t("moodContent"),
+    happy: t("moodHappy"),
+    ecstatic: t("moodEcstatic"),
+  }[mood];
+
   // ── Loading state ────────────────────────────────────────
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#f8f9f8]">
@@ -125,14 +140,22 @@ export default function CartPage() {
     <div className={`min-h-screen bg-[#f8f9f8] text-[#1a211e] font-sans ${isTranslating ? "opacity-85" : "opacity-100"} transition-opacity duration-200 pb-24`}>
 
       <div className="max-w-[1200px] mx-auto pt-10 px-5 md:pt-16">
-        <h1 className="display-serif text-[40px] md:text-[56px] m-0 mb-8 md:mb-12 text-center text-[#1a211e]">
-          {t("myCart")}
-        </h1>
+
+        <div className="flex flex-col items-center mb-8 md:mb-12">
+          <CartSmiley mood={mood} size={64} className="mb-3" />
+          <h1 className="display-serif text-[40px] md:text-[56px] m-0 text-center text-[#1a211e]">
+            {t("myCart")}
+          </h1>
+          {items.length > 0 && (
+            <p className="text-[13px] text-[#606562] mt-2 uppercase tracking-[0.05em] font-medium">
+              {moodMessage}
+            </p>
+          )}
+        </div>
 
         {/* Empty state */}
         {items.length === 0 ? (
           <div className="max-w-[480px] mx-auto text-center py-16 px-6 bg-white border border-[#e0e0e0]">
-            <ShoppingCart className="w-12 h-12 mx-auto mb-6 text-[#cccfcd]" strokeWidth={1} />
             <h2 className="text-[24px] font-normal text-[#1a211e] m-0 mb-2 font-serif">{t("emptyCartTitle")}</h2>
             <p className="text-[14px] text-[#606562] m-0 mb-8">{t("emptyCartSub")}</p>
             <button onClick={() => router.push("/")} className="bg-[#1a211e] hover:bg-[#363537] text-white border-none px-8 py-3.5 rounded text-[13px] font-bold uppercase tracking-[0.05em] cursor-pointer transition-colors w-full">
@@ -144,7 +167,7 @@ export default function CartPage() {
 
             {/* LEFT — Cart Items */}
             <div className="flex flex-col">
-              
+
               {/* Delivery notice */}
               <div className="bg-[#eef1f0] px-5 py-4 text-[13px] font-bold tracking-[0.05em] uppercase text-[#1a211e] flex items-center gap-3 mb-6">
                 <Truck className="w-4 h-4 shrink-0" />
@@ -165,7 +188,7 @@ export default function CartPage() {
 
                   return (
                     <div key={item._id} className={`p-5 md:p-6 flex flex-col sm:flex-row gap-5 md:gap-8 ${idx > 0 ? "border-t border-[#e0e0e0]" : ""} ${isRemoving ? "opacity-40" : "opacity-100"} transition-opacity`}>
-                      
+
                       {/* Product image */}
                       <div
                         onClick={() => router.push(`/product/${p._id}`)}

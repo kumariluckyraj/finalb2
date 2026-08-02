@@ -163,15 +163,43 @@ export default function ProductDetail() {
 
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
   const [recentProducts, setRecentProducts] = useState<any[]>([]);
-const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
+  const [availableCoupons, setAvailableCoupons] = useState<any[]>([]);
+  const [folders, setFolders] = useState<{ id: string; name: string; isDefault: boolean; itemCount: number }[]>([]);
+  const [productFolderIds, setProductFolderIds] = useState<string[]>([]);
+  const [showListPicker, setShowListPicker] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [creatingList, setCreatingList] = useState(false);
 
-useEffect(() => {
-  if (!product?._id) return;
-  fetch(`/api/coupons/available?productId=${product._id}`)
-    .then(r => r.json())
-    .then(d => setAvailableCoupons(d.coupons || []))
-    .catch(() => {});
-}, [product?._id]);
+  // Fetch which wishlist folders (if any) already contain this product.
+  // This is the single source of truth for `isWishlisted` — no other effect
+  // should independently overwrite it.
+  useEffect(() => {
+    if (!params.id) return;
+    fetch("/api/me").then(r => {
+      if (!r.ok) { setIsWishlisted(false); return; }
+      return r.json();
+    }).then(async (d) => {
+      if (!d?.user) return;
+      const res = await fetch(`/api/wishlist/product/${params.id}/folders`);
+      const data = await res.json();
+      setProductFolderIds(data.folderIds || []);
+      setIsWishlisted((data.folderIds || []).length > 0);
+    });
+  }, [params.id]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/wishlist/folders").then(r => r.json()).then(d => setFolders(d.folders || []));
+  }, [user]);
+
+  useEffect(() => {
+    if (!product?._id) return;
+    fetch(`/api/coupons/available?productId=${product._id}`)
+      .then(r => r.json())
+      .then(d => setAvailableCoupons(d.coupons || []))
+      .catch(() => {});
+  }, [product?._id]);
+
   // ── Data fetches ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetch(`/api/products/detail/${params.id}`)
@@ -209,19 +237,6 @@ useEffect(() => {
   useEffect(() => {
     if (!params.id) return;
     setIsCompared(readStringArray("b2world_compare").includes(String(params.id)));
-  }, [params.id]);
-
-  useEffect(() => {
-    if (!params.id) return;
-    fetch("/api/me").then(r => {
-      if (!r.ok) { setIsWishlisted(false); return; }
-      return r.json();
-    }).then(d => {
-      if (!d?.user) return;
-      fetch("/api/wishlist").then(r => r.json()).then(w => {
-        setIsWishlisted(w.productIds?.includes(String(params.id)) ?? false);
-      });
-    });
   }, [params.id]);
 
   const fetchReviews = useCallback(() => {
@@ -342,19 +357,60 @@ useEffect(() => {
     quantity <= (Number.isFinite(maxQty) ? maxQty : Infinity) &&
     deliveryAvailable === true;
 
-  const toggleWishlist = async () => {
+  // Opens the "Save to List" picker (or sends a signed-out user to log in first).
+  // This is what the heart button on the gallery calls.
+  const toggleWishlist = () => {
     if (!product?._id) return;
-    if (!user) { router.push("/login"); return; }
-    const isOn = !isWishlisted;
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+    setShowListPicker(true);
+  };
+
+  const toggleWishlistFolder = async (folderId: string) => {
+    if (!product?._id) return;
+    const isIn = productFolderIds.includes(folderId);
     try {
-      if (isOn) {
-        await fetch("/api/wishlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productId: product._id }) });
+      if (isIn) {
+        await fetch(`/api/wishlist/${product._id}?folderId=${folderId}`, { method: "DELETE" });
+        setProductFolderIds(prev => {
+          const next = prev.filter(id => id !== folderId);
+          setIsWishlisted(next.length > 0);
+          return next;
+        });
       } else {
-        await fetch(`/api/wishlist/${product._id}`, { method: "DELETE" });
+        await fetch("/api/wishlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId: product._id, folderId }),
+        });
+        setProductFolderIds(prev => {
+          const next = [...prev, folderId];
+          setIsWishlisted(true);
+          return next;
+        });
       }
-      setIsWishlisted(isOn);
       window.dispatchEvent(new CustomEvent("wishlist-updated"));
     } catch {}
+  };
+
+  const createListAndAdd = async () => {
+    if (!newListName.trim() || !product?._id) return;
+    setCreatingList(true);
+    try {
+      const res = await fetch("/api/wishlist/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newListName.trim() }),
+      });
+      const { folder } = await res.json();
+      setFolders(prev => [...prev, folder]);
+      setNewListName("");
+      await toggleWishlistFolder(folder.id);
+    } finally {
+      setCreatingList(false);
+    }
   };
 
   const toggleCompare = () => {
@@ -617,25 +673,25 @@ useEffect(() => {
               </p>
             )}
 
-{availableCoupons.length > 0 && (
-  <div className="mb-8 border-t border-[#e0e0e0] pt-6">
-    <span className="block text-[14px] font-bold uppercase tracking-[0.057em] text-[#1a211e] mb-3">
-      Available Offers
-    </span>
-    <div className="flex flex-col gap-2">
-      {availableCoupons.map((c) => (
-        <div key={c.id} className="flex items-start gap-2 text-[13px] text-[#1a211e]">
-          <span className="font-bold">{c.code}</span>
-          <span className="text-[#606562]">
-            — {c.discountType === "percentage" ? `${c.discountValue}% off` : `₹${c.discountValue} off`}
-            {c.bankCodes?.length ? ` on ${c.bankCodes.join("/")} cards` : ""}
-            {c.productId ? " (this product)" : ""}
-          </span>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+            {availableCoupons.length > 0 && (
+              <div className="mb-8 border-t border-[#e0e0e0] pt-6">
+                <span className="block text-[14px] font-bold uppercase tracking-[0.057em] text-[#1a211e] mb-3">
+                  Available Offers
+                </span>
+                <div className="flex flex-col gap-2">
+                  {availableCoupons.map((c) => (
+                    <div key={c.id} className="flex items-start gap-2 text-[13px] text-[#1a211e]">
+                      <span className="font-bold">{c.code}</span>
+                      <span className="text-[#606562]">
+                        — {c.discountType === "percentage" ? `${c.discountValue}% off` : `₹${c.discountValue} off`}
+                        {c.bankCodes?.length ? ` on ${c.bankCodes.join("/")} cards` : ""}
+                        {c.productId ? " (this product)" : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-4 flex items-center gap-3 text-[12px] font-bold uppercase tracking-[0.057em]">
               <span className={inStock ? "text-[#1a211e]" : "text-[#cc2e39]"}>
                 {stockValue === null ? "Available" : inStock ? "In Stock" : "Out of Stock"}
@@ -666,6 +722,53 @@ useEffect(() => {
                     {s}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {showListPicker && (
+            <div onClick={() => setShowListPicker(false)} className="fixed inset-0 bg-black/60 z-[1000] flex items-center justify-center p-4">
+              <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[8px] p-8 w-full max-w-[400px]">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-[18px] font-bold uppercase tracking-[0.057em] text-[#1a211e]">Save to List</h3>
+                  <button onClick={() => setShowListPicker(false)} className="text-[#606562] hover:text-[#1a211e] text-[24px]">✕</button>
+                </div>
+
+                <div className="flex flex-col gap-2 mb-6 max-h-[280px] overflow-y-auto">
+                  {folders.map(f => {
+                    const checked = productFolderIds.includes(f.id);
+                    return (
+                      <label key={f.id} className="flex items-center justify-between gap-3 px-3 py-2.5 border border-[#e0e0e0] rounded-[4px] cursor-pointer hover:border-[#1a211e] transition-colors">
+                        <span className="flex items-center gap-2 text-[14px] text-[#1a211e]">
+                          {f.name}
+                          <span className="text-[12px] text-[#606562]">({f.itemCount})</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleWishlistFolder(f.id)}
+                          className="w-4 h-4 accent-[#1a211e] cursor-pointer"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    value={newListName}
+                    onChange={(e) => setNewListName(e.target.value)}
+                    placeholder="New list name"
+                    className="flex-1 h-[44px] px-3 border border-[#cccfcd] rounded-[4px] text-[14px] outline-none focus:border-[#1a211e]"
+                  />
+                  <button
+                    onClick={createListAndAdd}
+                    disabled={!newListName.trim() || creatingList}
+                    className="h-[44px] px-4 bg-[#1a211e] text-white text-[13px] font-bold uppercase tracking-[0.05em] rounded-[4px] disabled:opacity-50"
+                  >
+                    {creatingList ? "..." : "Create"}
+                  </button>
+                </div>
               </div>
             </div>
           )}

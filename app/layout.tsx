@@ -5,6 +5,7 @@ import "./globals.css";
 import NavbarServer from "@/components/NavbarServer";
 import Footer from "@/components/Footer";
 import { LanguageProvider } from "@/context/LanguageContext";
+import VisitorTracker from "@/components/VisitorTracker";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -73,6 +74,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col">
         <LanguageProvider>
           {!hideMainUI && <NavbarServer />}
+          <VisitorTracker />
           <main className="flex-1 min-h-screen">{children}</main>
           {!hideMainUI && <Footer />}
         </LanguageProvider>

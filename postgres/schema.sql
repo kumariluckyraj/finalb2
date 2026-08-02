@@ -387,3 +387,105 @@ ALTER TABLE users ADD CONSTRAINT users_role_check
   CHECK (role IN ('admin', 'sub_admin', 'employee', 'customer', 'vendor'));
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by text REFERENCES users(id) ON DELETE SET NULL;
+
+-- ── Anonymous visitor tracking ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS visitor_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  visitor_id TEXT UNIQUE NOT NULL,
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+  visit_count INTEGER NOT NULL DEFAULT 1,
+  landing_path TEXT,
+  last_path TEXT,
+  referrer TEXT,
+  utm_source TEXT,
+  utm_medium TEXT,
+  utm_campaign TEXT,
+  user_agent TEXT,
+  ip_hash TEXT,
+  converted_user_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS visitor_page_views (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  visitor_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  product_id TEXT,
+  event_type TEXT NOT NULL DEFAULT 'page_view',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_visitor_sessions_last_seen ON visitor_sessions(last_seen);
+CREATE INDEX IF NOT EXISTS idx_page_views_visitor_id ON visitor_page_views(visitor_id);
+CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON visitor_page_views(created_at);
+
+-- ── Wishlists (base table — must exist before the folders migration below) ─
+CREATE TABLE IF NOT EXISTS wishlists (
+  id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id text NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wishlists_user_id ON wishlists (user_id);
+CREATE INDEX IF NOT EXISTS idx_wishlists_product_id ON wishlists (product_id);
+
+-- ── Named Wishlists (Folders) ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS wishlist_folders (
+  ...
+
+-- ── Named Wishlists (Folders) ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS wishlist_folders (
+  id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  is_default boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wishlist_folders_user_id ON wishlist_folders (user_id);
+
+ALTER TABLE wishlists ADD COLUMN IF NOT EXISTS folder_id text REFERENCES wishlist_folders(id) ON DELETE CASCADE;
+
+-- Backfill: every user with existing wishlist rows gets a "My Wishlist" default
+-- folder, and their existing items are attached to it.
+DO $$
+DECLARE
+  r RECORD;
+  new_folder_id text;
+BEGIN
+  FOR r IN SELECT DISTINCT user_id FROM wishlists WHERE folder_id IS NULL LOOP
+    INSERT INTO wishlist_folders (user_id, name, is_default)
+    VALUES (r.user_id, 'My Wishlist', true)
+    ON CONFLICT (user_id, name) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id INTO new_folder_id;
+
+    UPDATE wishlists SET folder_id = new_folder_id
+    WHERE user_id = r.user_id AND folder_id IS NULL;
+  END LOOP;
+END $$;
+
+-- Replace the old (user_id, product_id) uniqueness with (user_id, product_id, folder_id)
+-- so the same product can live in more than one named list.
+DO $$
+DECLARE
+  cons RECORD;
+BEGIN
+  FOR cons IN
+    SELECT tc.constraint_name
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name AND tc.table_name = kcu.table_name
+    WHERE tc.table_name = 'wishlists' AND tc.constraint_type = 'UNIQUE'
+    GROUP BY tc.constraint_name
+    HAVING array_agg(kcu.column_name ORDER BY kcu.column_name) = ARRAY['product_id', 'user_id']
+  LOOP
+    EXECUTE format('ALTER TABLE wishlists DROP CONSTRAINT %I', cons.constraint_name);
+  END LOOP;
+END $$;
+
+ALTER TABLE wishlists DROP CONSTRAINT IF EXISTS wishlists_user_product_folder_key;
+ALTER TABLE wishlists ADD CONSTRAINT wishlists_user_product_folder_key UNIQUE (user_id, product_id, folder_id);

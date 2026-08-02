@@ -14,9 +14,41 @@ type Product = {
 };
 
 export default function WishlistPage() {
+  type Folder = { id: string; name: string; isDefault: boolean; itemCount: number };
+const [folders, setFolders] = useState<Folder[]>([]);
+const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const router = useRouter();
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+  (async () => {
+    const me = await fetch("/api/me");
+    if (!me.ok) { router.replace("/login"); return; }
+
+    const foldersData = await fetch("/api/wishlist/folders").then(r => r.json());
+    const loadedFolders: Folder[] = foldersData.folders || [];
+    setFolders(loadedFolders);
+    const defaultFolder = loadedFolders.find(f => f.isDefault) ?? loadedFolders[0];
+    setActiveFolderId(defaultFolder?.id ?? null);
+  })();
+}, [router]);
+
+useEffect(() => {
+  if (!activeFolderId) return;
+  setLoading(true);
+  (async () => {
+    const { productIds = [] } = await fetch(`/api/wishlist?folderId=${activeFolderId}`).then(r => r.json());
+    const products = await Promise.all(productIds.map(async (id: string) => {
+      const res = await fetch(`/api/products/detail/${id}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.product as Product;
+    }));
+    setItems(products.filter(Boolean) as Product[]);
+    setLoading(false);
+  })();
+}, [activeFolderId]);
 
   useEffect(() => {
     (async () => {
@@ -38,10 +70,11 @@ export default function WishlistPage() {
   }, [router]);
 
   const remove = async (id: string) => {
-    await fetch(`/api/wishlist/${id}`, { method: "DELETE" });
-    window.dispatchEvent(new CustomEvent("wishlist-updated"));
-    setItems(prev => prev.filter(item => item._id !== id));
-  };
+  await fetch(`/api/wishlist/${id}?folderId=${activeFolderId}`, { method: "DELETE" });
+  window.dispatchEvent(new CustomEvent("wishlist-updated"));
+  setItems(prev => prev.filter(item => item._id !== id));
+  setFolders(prev => prev.map(f => f.id === activeFolderId ? { ...f, itemCount: f.itemCount - 1 } : f));
+};
 
   if (loading) return <div className="min-h-screen bg-[#f8f9f8] flex items-center justify-center"><div className="w-6 h-6 border-2 border-[#1a211e] border-t-transparent rounded-full animate-spin" /></div>;
 
@@ -50,6 +83,22 @@ export default function WishlistPage() {
       <div className="max-w-[1180px] mx-auto">
         <h1 className="m-0 mb-2 text-[32px] md:text-[40px] display-serif">Wishlist</h1>
         <p className="m-0 mb-8 text-[14px] text-[#606562]">Your saved products.</p>
+
+        <div className="flex flex-wrap gap-2 mb-8">
+  {folders.map(f => (
+    <button
+      key={f.id}
+      onClick={() => setActiveFolderId(f.id)}
+      className={`px-4 py-2 text-[13px] font-bold uppercase tracking-[0.05em] rounded-[4px] transition-colors ${
+        activeFolderId === f.id
+          ? "bg-[#1a211e] text-white"
+          : "bg-white text-[#1a211e] border border-[#e0e0e0] hover:border-[#1a211e]"
+      }`}
+    >
+      {f.name} ({f.itemCount})
+    </button>
+  ))}
+</div>
 
         {items.length === 0 ? (
           <div className="bg-white border border-[#e0e0e0] p-12 text-center">
