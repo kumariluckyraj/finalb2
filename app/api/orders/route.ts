@@ -9,12 +9,14 @@ import { findCouponById, incrementCouponUsage, recordCouponUsage, getUserCouponU
 import { findPromotionByCode, incrementPromotionUsage, recordPromotionUsage, getUserPromotionUsage } from "@/postgres/repositories/promotions";
 import { createSellerOrder } from "@/postgres/repositories/sellerOrders";
 import type { CartWithItemsRecord } from "@/postgres/models/Cart";
+import { resolveMaxCoinRedemptionPercent } from "@/lib/coins/wallet-service";
 
 type ProductRow = {
   id: string;
   vendorId: string;
   price: number;
   stock: number | null;
+  maxCoinRedemptionPercent: number | null;
 };
 
 const COMMISSION_PERCENT = 10; // 10% platform commission
@@ -131,17 +133,19 @@ export async function POST(req: NextRequest) {
       const deliveryFeeTotal = Array.from(vendorDeliveryFee.values()).reduce((a, b) => a + b, 0);
       const deliveryFeeAppliedForVendor = new Set<string>();
 
-      const createdOrders = [];
+   const createdOrders = [];
       let grandTotal = 0;
       let appliedCoupon: any = null;
       let appliedPromotion: any = null;
       let couponDiscountTotal = 0;
       let pendingCouponDiscountTotal = 0; // held discount for bank-restricted coupons, not yet applied
+      let coinCapTotal = 0; // sum of each item's own max-coin-redemption cap (vendor-controlled, excludes delivery fee)
 
       for (const item of itemsToProcess) {
-        const { rows } = await client.query<ProductRow>(
+      const { rows } = await client.query<ProductRow>(
           `
-            SELECT id, vendor_id AS "vendorId", price::float8 AS price, stock
+            SELECT id, vendor_id AS "vendorId", price::float8 AS price, stock,
+                   max_coin_redemption_percent::float8 AS "maxCoinRedemptionPercent"
             FROM products
             WHERE id = $1
             FOR UPDATE
@@ -244,13 +248,17 @@ export async function POST(req: NextRequest) {
           }
         }
 
+      // Coin redemption cap for this item is the vendor's own percentage applied to the
+        // item's post-coupon (but pre-delivery) value. Delivery fees are never coin-payable.
+        const itemCoinPercent = resolveMaxCoinRedemptionPercent(productRow.maxCoinRedemptionPercent);
+        coinCapTotal += (orderTotal * itemCoinPercent) / 100;
+
         let deliveryFeeForThisOrder = 0;
         if (!deliveryFeeAppliedForVendor.has(productRow.vendorId)) {
           deliveryFeeForThisOrder = vendorDeliveryFee.get(productRow.vendorId) ?? 0;
           deliveryFeeAppliedForVendor.add(productRow.vendorId);
         }
         orderTotal = orderTotal + deliveryFeeForThisOrder;
-
         const { rows: orderRows } = await client.query<OrderRow>(
           `
             INSERT INTO orders (
@@ -351,10 +359,10 @@ export async function POST(req: NextRequest) {
           [user.userId]
         );
         const wallet = walletRes.rows[0];
-
-        if (wallet && wallet.status === "active" && wallet.balance > 0) {
-          coinsApplied = Math.min(coinsUsed, wallet.balance, orderTotalAfterCoupon);
-
+if (wallet && wallet.status === "active" && wallet.balance > 0) {
+          // Never let the client-supplied coinsUsed exceed: wallet balance, the order total,
+          // or the sum of each item's vendor-configured max-redemption-percent cap.
+          coinsApplied = Math.min(coinsUsed, wallet.balance, orderTotalAfterCoupon, Math.floor(coinCapTotal));
           if (coinsApplied > 0) {
             const debited = await client.query<{ balance: number }>(
               `UPDATE wallets SET balance = balance - $1, lifetime_spent = lifetime_spent + $1, updated_at = now()

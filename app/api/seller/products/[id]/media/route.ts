@@ -12,7 +12,7 @@ async function syncProductToMain(id: string, user: any) {
   if (!product || product.status !== "active") return;
   const media = await listMediaByProduct(id);
   const primaryImage = media.find(m => m.isPrimary)?.url || media[0]?.url || "";
-  await syncFromSellerProduct({
+ await syncFromSellerProduct({
     id: product.id,
     vendorId: user.userId,
     name: product.name,
@@ -24,6 +24,8 @@ async function syncProductToMain(id: string, user: any) {
     image: primaryImage,
     stock: product.stock,
     brand: product.brand,
+    coinValidityDays: product.coinValidityDays,
+    maxCoinRedemptionPercent: product.maxCoinRedemptionPercent,
     status: product.status,
   });
 }

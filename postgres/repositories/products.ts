@@ -15,8 +15,9 @@ const productSelect = `
     price::float8 AS "price",
     discount::float8 AS "discount",
     image,
-    stock,
-    max_coin_redemption_percent AS "maxCoinRedemptionPercent",
+  stock,
+    coin_validity_days AS "coinValidityDays",
+    max_coin_redemption_percent::float8 AS "maxCoinRedemptionPercent",
     weight,
     dimensions,
     size,
@@ -168,6 +169,8 @@ export async function syncFromSellerProduct(sp: {
   stock: number;
   brand: string | null;
   status: string;
+  coinValidityDays?: number | null;
+  maxCoinRedemptionPercent?: number | null;
 }): Promise<void> {
   if (sp.status !== "active") {
     await query(`DELETE FROM products WHERE id = $1`, [sp.id]);
@@ -175,8 +178,8 @@ export async function syncFromSellerProduct(sp: {
   }
   await query(
     `
-      INSERT INTO products (id, vendor_id, name, description, category, actual_price, price, discount, image, stock, brand)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      INSERT INTO products (id, vendor_id, name, description, category, actual_price, price, discount, image, stock, brand, coin_validity_days, max_coin_redemption_percent)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       ON CONFLICT (id) DO UPDATE SET
         vendor_id = EXCLUDED.vendor_id,
         name = EXCLUDED.name,
@@ -188,9 +191,15 @@ export async function syncFromSellerProduct(sp: {
         image = EXCLUDED.image,
         stock = EXCLUDED.stock,
         brand = EXCLUDED.brand,
+        coin_validity_days = EXCLUDED.coin_validity_days,
+        max_coin_redemption_percent = EXCLUDED.max_coin_redemption_percent,
         updated_at = now()
     `,
-    [sp.id, sp.vendorId, sp.name, sp.description, sp.category, sp.mrp, sp.sellingPrice, sp.discount, sp.image, sp.stock, sp.brand]
+    [
+      sp.id, sp.vendorId, sp.name, sp.description, sp.category, sp.mrp, sp.sellingPrice,
+      sp.discount, sp.image, sp.stock, sp.brand,
+      sp.coinValidityDays ?? null, sp.maxCoinRedemptionPercent ?? null,
+    ]
   );
 }
 

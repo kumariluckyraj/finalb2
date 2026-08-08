@@ -33,9 +33,11 @@ const productSelect = `
     handling_time AS "handlingTime",
     handling_time AS "handlingTime",
     fulfillment_method AS "fulfillmentMethod",
-    search_title AS "searchTitle",
+   search_title AS "searchTitle",
     tags,
     keywords,
+    coin_validity_days AS "coinValidityDays",
+    max_coin_redemption_percent::float8 AS "maxCoinRedemptionPercent",
     status,
     is_featured AS "isFeatured",
     is_promoted AS "isPromoted",
@@ -52,10 +54,11 @@ export async function createSellerProduct(input: CreateSellerProductInput): Prom
         mrp, selling_price, discount, sku, barcode, stock, low_stock_threshold,
         weight, weight_unit, length, width, height, dimension_unit,
         ships_from, warehouse_address, warehouse_city, warehouse_state, warehouse_pincode,
-        handling_time, fulfillment_method, search_title, tags, keywords, status
+       handling_time, fulfillment_method, search_title, tags, keywords,
+        coin_validity_days, max_coin_redemption_percent, status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
-      RETURNING id, seller_id AS "sellerId", store_id AS "storeId", name, description, brand, category, subcategory, mrp, selling_price AS "sellingPrice", discount, sku, barcode, stock, low_stock_threshold AS "lowStockThreshold", weight, weight_unit AS "weightUnit", length, width, height, dimension_unit AS "dimensionUnit", ships_from AS "shipsFrom", warehouse_address AS "warehouseAddress", warehouse_city AS "warehouseCity", warehouse_state AS "warehouseState", warehouse_pincode AS "warehousePincode", handling_time AS "handlingTime", fulfillment_method AS "fulfillmentMethod", search_title AS "searchTitle", tags, keywords, status, is_featured AS "isFeatured", is_promoted AS "isPromoted", created_at AS "createdAt", updated_at AS "updatedAt"
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
+      RETURNING id, seller_id AS "sellerId", store_id AS "storeId", name, description, brand, category, subcategory, mrp, selling_price AS "sellingPrice", discount, sku, barcode, stock, low_stock_threshold AS "lowStockThreshold", weight, weight_unit AS "weightUnit", length, width, height, dimension_unit AS "dimensionUnit", ships_from AS "shipsFrom", warehouse_address AS "warehouseAddress", warehouse_city AS "warehouseCity", warehouse_state AS "warehouseState", warehouse_pincode AS "warehousePincode", handling_time AS "handlingTime", fulfillment_method AS "fulfillmentMethod", search_title AS "searchTitle", tags, keywords, coin_validity_days AS "coinValidityDays", max_coin_redemption_percent::float8 AS "maxCoinRedemptionPercent", status, is_featured AS "isFeatured", is_promoted AS "isPromoted", created_at AS "createdAt", updated_at AS "updatedAt"
     `,
     [
       randomUUID(),
@@ -86,9 +89,11 @@ export async function createSellerProduct(input: CreateSellerProductInput): Prom
       input.warehousePincode ?? null,
       input.handlingTime ?? 1,
       input.fulfillmentMethod ?? "self",
-      input.searchTitle ?? null,
+   input.searchTitle ?? null,
       JSON.stringify(input.tags ?? []),
       JSON.stringify(input.keywords ?? []),
+      input.coinValidityDays ?? null,
+      input.maxCoinRedemptionPercent ?? null,
       input.status ?? "draft",
     ]
   );
@@ -150,11 +155,12 @@ export async function updateSellerProduct(id: string, patch: Partial<CreateSelle
         length = $17, width = $18, height = $19, dimension_unit = $20,
         ships_from = $21, warehouse_address = $22, warehouse_city = $23,
         warehouse_state = $24, warehouse_pincode = $25,
-        handling_time = $26, fulfillment_method = $27,
-        search_title = $28, tags = $29, keywords = $30, status = $31,
-        is_featured = $32, is_promoted = $33, updated_at = now()
+     handling_time = $26, fulfillment_method = $27,
+        search_title = $28, tags = $29, keywords = $30,
+        coin_validity_days = $31, max_coin_redemption_percent = $32,
+        status = $33, is_featured = $34, is_promoted = $35, updated_at = now()
       WHERE id = $1
-      RETURNING id, seller_id AS "sellerId", store_id AS "storeId", name, description, brand, category, subcategory, mrp, selling_price AS "sellingPrice", discount, sku, barcode, stock, low_stock_threshold AS "lowStockThreshold", weight, weight_unit AS "weightUnit", length, width, height, dimension_unit AS "dimensionUnit", ships_from AS "shipsFrom", warehouse_address AS "warehouseAddress", warehouse_city AS "warehouseCity", warehouse_state AS "warehouseState", warehouse_pincode AS "warehousePincode", handling_time AS "handlingTime", fulfillment_method AS "fulfillmentMethod", search_title AS "searchTitle", tags, keywords, status, is_featured AS "isFeatured", is_promoted AS "isPromoted", created_at AS "createdAt", updated_at AS "updatedAt"
+      RETURNING id, seller_id AS "sellerId", store_id AS "storeId", name, description, brand, category, subcategory, mrp, selling_price AS "sellingPrice", discount, sku, barcode, stock, low_stock_threshold AS "lowStockThreshold", weight, weight_unit AS "weightUnit", length, width, height, dimension_unit AS "dimensionUnit", ships_from AS "shipsFrom", warehouse_address AS "warehouseAddress", warehouse_city AS "warehouseCity", warehouse_state AS "warehouseState", warehouse_pincode AS "warehousePincode", handling_time AS "handlingTime", fulfillment_method AS "fulfillmentMethod", search_title AS "searchTitle", tags, keywords, coin_validity_days AS "coinValidityDays", max_coin_redemption_percent::float8 AS "maxCoinRedemptionPercent", status, is_featured AS "isFeatured", is_promoted AS "isPromoted", created_at AS "createdAt", updated_at AS "updatedAt"
     `,
     [
       id,
@@ -165,14 +171,14 @@ export async function updateSellerProduct(id: string, patch: Partial<CreateSelle
       next.length ?? null, next.width ?? null, next.height ?? null, next.dimensionUnit,
       next.shipsFrom ?? null, next.warehouseAddress ?? null, next.warehouseCity ?? null,
       next.warehouseState ?? null, next.warehousePincode ?? null,
-      next.handlingTime, next.fulfillmentMethod,
+    next.handlingTime, next.fulfillmentMethod,
       next.searchTitle ?? null, JSON.stringify(next.tags), JSON.stringify(next.keywords),
+      next.coinValidityDays ?? null, next.maxCoinRedemptionPercent ?? null,
       next.status, next.isFeatured, next.isPromoted,
     ]
   );
   return rows[0] ?? null;
 }
-
 export async function deleteSellerProduct(id: string): Promise<boolean> {
   const { rowCount } = await query(`DELETE FROM seller_products WHERE id = $1`, [id]);
   return (rowCount ?? 0) > 0;

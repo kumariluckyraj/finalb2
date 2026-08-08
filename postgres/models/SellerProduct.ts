@@ -1,3 +1,4 @@
+
 import type { TimestampedRecord } from "./common";
 
 export type ProductStatus = "draft" | "active" | "archived" | "unlisted";
@@ -34,10 +35,12 @@ export interface SellerProductRecord extends TimestampedRecord {
   status: ProductStatus;
   isFeatured: boolean;
   isPromoted: boolean;
-    warehouseAddress: string | null;
+  warehouseAddress: string | null;
   warehouseCity: string | null;
   warehouseState: string | null;
   warehousePincode: string | null;
+  coinValidityDays: number | null;
+  maxCoinRedemptionPercent: number | null;
 }
 
 export interface CreateSellerProductInput {
@@ -68,8 +71,10 @@ export interface CreateSellerProductInput {
   tags?: string[];
   keywords?: string[];
   status?: ProductStatus;
-   warehouseAddress?: string | null;
+  warehouseAddress?: string | null;
   warehouseCity?: string | null;
   warehouseState?: string | null;
   warehousePincode?: string | null;
+  coinValidityDays?: number | null;
+  maxCoinRedemptionPercent?: number | null;
 }
