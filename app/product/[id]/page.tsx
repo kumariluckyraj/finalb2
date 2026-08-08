@@ -61,7 +61,14 @@ const PRODUCT_STRINGS = {
   addedToCartAlert: "Added to cart!",
   invalidOtpAlert: "Invalid OTP, try again.",
   checkPincodeHint: "Check your pincode to enable purchase",
-  lowStockHint: "Only {n} left in stock",
+ lowStockHint: "Only {n} left in stock",
+  superCoinsTitle: "SuperCoins on this purchase",
+  earnValidFor: "Coins earned are valid for",
+  daysLabel: "days",
+  maxRedeemLabel: "You can pay up to",
+  ofThisOrder: "of this order using SuperCoins",
+  yourCoinsLabel: "Your SuperCoins balance:",
+  usableHereLabel: "Usable on this order:",
 };
 
 const CATEGORY_HIGHLIGHTS: Record<string, { labelKey: string; key: string }[]> =
@@ -110,7 +117,8 @@ export default function ProductDetail() {
   const router = useRouter();
   const params = useParams();
   const { language, translate } = useLanguage();
-  const [user, setUser] = useState<any>(null);
+const [user, setUser] = useState<any>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -186,6 +194,8 @@ export default function ProductDetail() {
       setIsWishlisted((data.folderIds || []).length > 0);
     });
   }, [params.id]);
+
+ 
 
   useEffect(() => {
     if (!user) return;
@@ -266,6 +276,14 @@ export default function ProductDetail() {
       })
       .catch(() => setUser(null));
   }, []);
+
+  useEffect(() => {
+    if (!user) { setWalletBalance(null); return; }
+    fetch("/api/wallet")
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setWalletBalance(d.balance); })
+      .catch(() => {});
+  }, [user]);
 
   // ── THE SINGLE UNIFIED TRANSLATE EFFECT ──────────────────────────────────
   useEffect(() => {
@@ -550,9 +568,15 @@ export default function ProductDetail() {
       </div>
     );
 
-  const discountPercent = product.actualPrice
+ const discountPercent = product.actualPrice
     ? Math.round(((product.actualPrice - product.price) / product.actualPrice) * 100)
     : product.discount;
+
+  // Vendor-controlled coin settings, with platform-wide fallbacks if the vendor hasn't set them.
+  const coinValidityDays = product.coinValidityDays ?? 90;
+  const maxCoinRedemptionPercent = product.maxCoinRedemptionPercent ?? 20;
+  const maxCoinsForOrder = Math.floor((product.price * quantity * maxCoinRedemptionPercent) / 100);
+  const usableCoins = walletBalance !== null ? Math.min(walletBalance, maxCoinsForOrder) : null;
   const hasSizeSelector = requiresSize;
   const highlightFields = CATEGORY_HIGHLIGHTS[product.category?.toLowerCase()] ?? [];
   const highlightRows = highlightFields
@@ -675,6 +699,22 @@ export default function ProductDetail() {
 
             {availableCoupons.length > 0 && (
               <div className="mb-8 border-t border-[#e0e0e0] pt-6">
+                 <span className="block text-[14px] font-bold uppercase tracking-[0.057em] text-[#1a211e] mb-3">
+                {t("superCoinsTitle")}
+              </span>
+              <p className="text-[13px] text-[#606562] mb-1">
+                {t("maxRedeemLabel")} <strong className="text-[#1a211e]">{maxCoinRedemptionPercent}%</strong> (₹{maxCoinsForOrder.toLocaleString("en-IN")}) {t("ofThisOrder")}
+              </p>
+              <p className="text-[13px] text-[#606562] mb-1">
+                {t("earnValidFor")} <strong className="text-[#1a211e]">{coinValidityDays}</strong> {t("daysLabel")}
+              </p>
+              {walletBalance !== null && (
+                <p className="text-[13px] text-[#606562]">
+                  {t("yourCoinsLabel")} <strong className="text-[#1a211e]">{walletBalance}</strong>
+                  {" · "}
+                  {t("usableHereLabel")} <strong className="text-[#1a211e]">{usableCoins}</strong>
+                </p>
+              )}
                 <span className="block text-[14px] font-bold uppercase tracking-[0.057em] text-[#1a211e] mb-3">
                   Available Offers
                 </span>

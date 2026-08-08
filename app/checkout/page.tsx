@@ -292,7 +292,8 @@ function CheckoutContent() {
   const [orderDone, setOrderDone] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [coinBalance, setCoinBalance] = useState(0);
-  const [maxRedeemable, setMaxRedeemable] = useState(0);
+ const [maxRedeemable, setMaxRedeemable] = useState(0);
+  const [maxRedemptionPercent, setMaxRedemptionPercent] = useState<number | null>(null);
   const [coinRedeemAmount, setCoinRedeemAmount] = useState(0);
   const [coinRedeemEnabled, setCoinRedeemEnabled] = useState(false);
   const [couponCode, setCouponCode] = useState("");
@@ -435,18 +436,33 @@ function CheckoutContent() {
   const total = Math.max(0, subtotal + deliveryFee - coinDiscount - (isBankRestrictedPending ? 0 : couponDiscount));
   const totalItemsCount = fromCart ? cartItems.reduce((s, i) => s + i.quantity, 0) : quantity;
 
-  // ── Coin data fetch ────────────────────────────────────────────────────────
+ // ── Coin data fetch ────────────────────────────────────────────────────────
+  // Passes per-product context so the backend can apply each vendor's own
+  // coin-validity / max-redemption-percent settings instead of a flat global cap.
   useEffect(() => {
-    if (subtotal > 0) {
-      fetch(`/api/coins/redeem?amount=${subtotal}`)
-        .then(r => r.json())
-        .then(d => {
-          setCoinBalance(d.walletBalance ?? 0);
-          setMaxRedeemable(d.maxRedeemable ?? 0);
-        })
-        .catch(() => { });
+    if (subtotal <= 0) return;
+
+    const qp = new URLSearchParams({ amount: String(subtotal) });
+
+    if (fromCart && cartItems.length > 0) {
+      const items = cartItems.map((item: any) => ({
+        productId: item.productId?._id ?? item.productId,
+        subtotal: (item.productId?.price ?? 0) * item.quantity,
+      }));
+      qp.set("items", JSON.stringify(items));
+    } else if (productId) {
+      qp.set("productId", productId);
     }
-  }, [subtotal]);
+
+    fetch(`/api/coins/redeem?${qp.toString()}`)
+      .then(r => r.json())
+      .then(d => {
+        setCoinBalance(d.walletBalance ?? 0);
+        setMaxRedeemable(d.maxRedeemable ?? 0);
+        setMaxRedemptionPercent(d.maxRedemptionPercent ?? null);
+      })
+      .catch(() => { });
+  }, [subtotal, fromCart, cartItems, productId]);
 
   useEffect(() => {
     if (storeSettings?.codEnabled === false && paymentMethod === "cod") {
@@ -985,9 +1001,14 @@ function CheckoutContent() {
           {coinBalance > 0 && (
             <div style={{ background: b2w.white, borderRadius: 8, border: `1px solid ${b2w.border}`, padding: 16, marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: coinRedeemEnabled ? 12 : 0 }}>
-                <div>
+              <div>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: b2w.navy }}>Super Coins</p>
                   <p style={{ margin: "2px 0 0", fontSize: 12, color: b2w.muted }}>{coinBalance} coins available (1 coin = Re. 1)</p>
+                  {maxRedemptionPercent !== null && (
+                    <p style={{ margin: "2px 0 0", fontSize: 12, color: b2w.muted }}>
+                      Up to {maxRedemptionPercent}% of this order can be paid with coins
+                    </p>
+                  )}
                 </div>
                 <label style={{ position: "relative", display: "inline-block", width: 40, height: 22, cursor: "pointer" }}>
                   <input type="checkbox" checked={coinRedeemEnabled} onChange={() => { setCoinRedeemEnabled(!coinRedeemEnabled); setCoinRedeemAmount(0); }} style={{ opacity: 0, width: 0, height: 0 }} />

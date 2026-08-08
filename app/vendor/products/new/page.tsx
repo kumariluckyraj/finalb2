@@ -19,8 +19,10 @@ export default function NewProduct() {
     stock: 0, lowStockThreshold: 5,
     weight: 0, weightUnit: "kg", length: 0, width: 0, height: 0,
     
-    shipsFrom: "",    warehouseAddress: "", warehouseCity: "", warehouseState: "", warehousePincode: "", handlingTime: 1, fulfillmentMethod: "self",
+   shipsFrom: "",    warehouseAddress: "", warehouseCity: "", warehouseState: "", warehousePincode: "", handlingTime: 1, fulfillmentMethod: "self",
     searchTitle: "", tags: "", keywords: "",
+    coinValidityDays: "" as number | "", // "" = use platform default (90 days)
+    maxCoinRedemptionPercent: "" as number | "", // "" = use platform default (20%)
   });
 
   const update = (f: string, v: any) => setForm(prev => ({ ...prev, [f]: v }));
@@ -88,14 +90,16 @@ export default function NewProduct() {
     setLoading(true);
     setError("");
 
-    const payload = {
+  const payload = {
       ...form,
       tags: form.tags ? form.tags.split(",").map((t: string) => t.trim()) : [],
       keywords: form.keywords ? form.keywords.split(",").map((t: string) => t.trim()) : [],
       discount: form.mrp > form.sellingPrice ? form.mrp - form.sellingPrice : 0,
+      // "" means "vendor didn't set it" → send null so the backend applies platform defaults
+      coinValidityDays: form.coinValidityDays === "" ? null : form.coinValidityDays,
+      maxCoinRedemptionPercent: form.maxCoinRedemptionPercent === "" ? null : form.maxCoinRedemptionPercent,
       status,
     };
-
     const res = await fetch("/api/seller/products", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -298,6 +302,41 @@ export default function NewProduct() {
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Handling Time (days)</label>
               <input type="number" value={form.handlingTime} onChange={e => update("handlingTime", Number(e.target.value))} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+            </div>
+          </div>
+        </div>
+
+       <div className="bg-white rounded-xl p-6 border border-gray-100">
+          <h2 className="font-semibold text-gray-800 mb-4">SuperCoins Settings</h2>
+          <p className="text-xs text-gray-400 mb-4">
+            Leave blank to use platform defaults (90-day validity, 20% max redemption).
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Coin Validity (days)</label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={form.coinValidityDays}
+                onChange={e => update("coinValidityDays", e.target.value === "" ? "" : Math.max(1, Math.min(365, Number(e.target.value))))}
+                placeholder="90"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">How long coins earned from this product stay valid before expiring.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Max Redemption (% of order)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={form.maxCoinRedemptionPercent}
+                onChange={e => update("maxCoinRedemptionPercent", e.target.value === "" ? "" : Math.max(0, Math.min(100, Number(e.target.value))))}
+                placeholder="20"
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">Max % of this product's price a buyer can pay using SuperCoins.</p>
             </div>
           </div>
         </div>

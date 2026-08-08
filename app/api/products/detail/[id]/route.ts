@@ -32,6 +32,17 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     }
   }
 
+ const coinConfig = await query<{
+    coinValidityDays: number | null;
+    maxCoinRedemptionPercent: number | null;
+  }>(
+    `SELECT coin_validity_days AS "coinValidityDays",
+            max_coin_redemption_percent::float8 AS "maxCoinRedemptionPercent"
+     FROM products WHERE id = $1`,
+    [id]
+  );
+  const coinConfigRow = coinConfig.rows[0] ?? { coinValidityDays: null, maxCoinRedemptionPercent: null };
+
   const sp = await query<{
     warehouseAddress: string | null;
     warehouseCity: string | null;
@@ -61,9 +72,12 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
   const media = await listMediaByProduct(id);
 
-  return NextResponse.json({
+ return NextResponse.json({
     product: {
       ...toApiProduct(product),
+      // Vendor-configurable coin settings — null means "use platform defaults" (resolved client/server-side).
+      coinValidityDays: coinConfigRow.coinValidityDays,
+      maxCoinRedemptionPercent: coinConfigRow.maxCoinRedemptionPercent,
       media: media.map(m => ({ id: m.id, url: m.url, type: m.type, isPrimary: m.isPrimary, sortOrder: m.sortOrder })),
       shipsFrom,
       sellerProfile: sellerProfile

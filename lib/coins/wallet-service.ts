@@ -1,3 +1,4 @@
+
 import { withTransaction, query } from "@/postgres/lib/db";
 import * as coinRepo from "@/postgres/repositories/coins";
 import { getOrderStats } from "@/postgres/repositories/orders";
@@ -5,7 +6,25 @@ import type { TransactionType, WalletRecord, WalletTransactionRecord, Membership
 
 const IDEMPOTENCY_NS = "b2w:coins";
 
-const COIN_VALIDITY_DAYS = 90;
+// ── Coin config defaults & resolvers ──────────────────────────────────────
+// Vendors can override these per-product. When a product hasn't set a value,
+// we fall back to these platform defaults.
+export const DEFAULT_COIN_VALIDITY_DAYS = 90;
+export const DEFAULT_MAX_COIN_REDEMPTION_PERCENT = 20; // % of item price payable via coins
+
+export function resolveCoinValidityDays(vendorValidityDays?: number | null): number {
+  if (typeof vendorValidityDays === "number" && vendorValidityDays > 0) {
+    return Math.min(Math.floor(vendorValidityDays), 365); // sane upper bound
+  }
+  return DEFAULT_COIN_VALIDITY_DAYS;
+}
+
+export function resolveMaxCoinRedemptionPercent(vendorPercent?: number | null): number {
+  if (typeof vendorPercent === "number" && vendorPercent >= 0) {
+    return Math.min(vendorPercent, 100);
+  }
+  return DEFAULT_MAX_COIN_REDEMPTION_PERCENT;
+}
 
 function makeIdempotencyKey(prefix: string, uniqueId: string): string {
   return `${IDEMPOTENCY_NS}:${prefix}:${uniqueId}`;
@@ -40,7 +59,8 @@ export async function earnCoins(params: {
   description?: string;
   isPending?: boolean;
   expiryDate?: Date;
-}): Promise<WalletTransactionRecord> {
+  validityDays?: number; // NEW — pass product.coinValidityDays when earning from a purchase
+}): Promise<WalletTransactionRecord>  {
   const idempotencyKey = makeIdempotencyKey("earn", `${params.referenceType ?? "generic"}:${params.referenceId ?? params.source}:${params.userId}`);
 
   const existing = await coinRepo.getTransactionByIdempotencyKey(idempotencyKey);
@@ -77,7 +97,7 @@ export async function earnCoins(params: {
       referenceType: params.referenceType ?? null,
       referenceId: params.referenceId ?? null,
       campaignId: params.campaignId ?? null,
-      expiryDate: params.expiryDate ?? new Date(Date.now() + COIN_VALIDITY_DAYS * 24 * 60 * 60 * 1000),
+      expiryDate: params.expiryDate ?? new Date(Date.now() + resolveCoinValidityDays(params.validityDays) * 24 * 60 * 60 * 1000),
       description: params.description ?? `Earned ${adjustedAmount} coins`,
       idempotencyKey,
     });
@@ -104,10 +124,9 @@ export async function redeemCoins(params: {
   description?: string;
   idempotencyKey?: string;
 }): Promise<{ transaction: WalletTransactionRecord; coinDiscount: number; remainingAmount: number }> {
-  await expireUserCoins(params.userId); // sweep expired coins BEFORE checking balance
+  await expireUserCoins(params.userId);
 
   const key = params.idempotencyKey ?? makeIdempotencyKey("redeem", `${params.referenceType ?? "generic"}:${params.referenceId ?? "unknown"}:${params.userId}`);
-  // ...rest of the function is unchanged
   const existing = await coinRepo.getTransactionByIdempotencyKey(key);
   if (existing) {
     const remaining = await coinRepo.getOrCreateWallet(params.userId);
@@ -227,7 +246,6 @@ export async function expireCoins(userId: string, amount: number, description?: 
   });
 }
 
-
 export async function expireUserCoins(userId: string): Promise<number> {
   const { rows: earnTxs } = await query<{ id: string; amount: number }>(
     `SELECT id, amount
@@ -245,7 +263,7 @@ export async function expireUserCoins(userId: string): Promise<number> {
   for (const earnTx of earnTxs) {
     const idempotencyKey = `expire:${earnTx.id}`;
     const already = await coinRepo.getTransactionByIdempotencyKey(idempotencyKey);
-    if (already) continue; // this batch was already expired, skip it
+    if (already) continue;
 
     await withTransaction(async () => {
       const wallet = await coinRepo.getOrCreateWallet(userId);
@@ -277,7 +295,6 @@ export async function expireUserCoins(userId: string): Promise<number> {
 
   return totalExpired;
 }
-
 
 export async function checkAndUpgradeTier(userId: string): Promise<MembershipTierRecord | null> {
   const tiers = await coinRepo.getMembershipTiers();
