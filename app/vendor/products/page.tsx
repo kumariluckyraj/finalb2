@@ -9,10 +9,86 @@ const STATUS_COLORS: Record<string, string> = {
   unlisted: "bg-red-100 text-red-700",
 };
 
+function AddProductModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-gray-800">How will this product be fulfilled?</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none px-2"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-gray-500 -mt-2 mb-2">
+            Choose who will handle shipping, tracking, and returns for this product.
+          </p>
+
+          {/* Self-managed option */}
+          <Link
+            href="/vendor/products/new?logistics=self"
+            className="block border border-gray-200 rounded-xl p-4 hover:border-brand-blue hover:bg-blue-50/40 transition group"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-brand-blue/10 flex items-center justify-center text-brand-blue flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h13l4 4v6a1 1 0 01-1 1h-2M3 7v10a1 1 0 001 1h2m10-11V6a1 1 0 00-1-1H4a1 1 0 00-1 1v1m13 11a2 2 0 11-4 0 2 2 0 014 0zM7 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800 group-hover:text-brand-blue transition">
+                  I&apos;ll handle logistics myself
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  You&apos;ll be responsible for shipping, tracking, and processing returns for this product.
+                </p>
+              </div>
+            </div>
+          </Link>
+
+          {/* Admin-managed option */}
+          <Link
+            href="/vendor/products/new?logistics=admin"
+            className="block border border-gray-200 rounded-xl p-4 hover:border-brand-blue hover:bg-blue-50/40 transition group"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-brand-blue/10 flex items-center justify-center text-brand-blue flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800 group-hover:text-brand-blue transition">
+                  Let B2World handle logistics
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  B2World admin will manage shipping, tracking, and returns on your behalf.
+                </p>
+              </div>
+            </div>
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SellerProducts() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const load = (status = "") => {
     setLoading(true);
@@ -35,7 +111,12 @@ export default function SellerProducts() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Products</h1>
-        <Link href="/vendor/products/new" className="px-4 py-2 bg-brand-blue text-white rounded-xl text-sm font-semibold hover:bg-brand-blue transition">+ Add Product</Link>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="px-4 py-2 bg-brand-blue text-white rounded-xl text-sm font-semibold hover:bg-brand-blue transition"
+        >
+          + Add Product
+        </button>
       </div>
 
       <div className="flex gap-2 mb-4 flex-wrap">
@@ -52,7 +133,12 @@ export default function SellerProducts() {
       ) : products.length === 0 ? (
         <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-100">
           <p className="text-lg mb-2">No products yet</p>
-          <Link href="/vendor/products/new" className="text-brand-blue hover:underline text-sm">Add your first product</Link>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="text-brand-blue hover:underline text-sm"
+          >
+            Add your first product
+          </button>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -100,6 +186,8 @@ export default function SellerProducts() {
           </table>
         </div>
       )}
+
+      {showAddModal && <AddProductModal onClose={() => setShowAddModal(false)} />}
     </div>
   );
 }
