@@ -9,6 +9,9 @@ import FeaturedProducts from "@/components/FeaturedProducts";
 import RecentlyViewed from "@/components/RecentlyViewed";
 import TrustBadges from "@/components/TrustBadges";
 
+// Keep in sync with Navbar.tsx / HeroBanner.tsx / CategoryGrid.tsx / FeaturedProducts.tsx / TrustBadges.tsx / RecentlyViewed.tsx
+const PAGE_MAX_W = "max-w-[1200px]";
+
 const CATEGORIES = [
   { id: "fashion",     label: "Fashion",      img: "https://images.unsplash.com/photo-1558171813-4c088753af8f?w=800&q=80" },
   { id: "mobile",      label: "Mobiles",      img: "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=800&q=80" },
@@ -141,7 +144,7 @@ export default function HomePage() {
         />
 
         {/* Divider */}
-        <div className="max-w-[1440px] mx-auto px-5 md:px-10">
+        <div className={`${PAGE_MAX_W} mx-auto px-4 md:px-10`}>
           <div className="h-px bg-[#e0e0e0]" />
         </div>
 
@@ -193,7 +196,7 @@ export default function HomePage() {
 
         {/* Section 7: Newsletter CTA */}
         <section className="py-16 md:py-24 bg-[#0c0c0c]">
-          <div className="max-w-[1440px] mx-auto px-5 md:px-10 text-center">
+          <div className={`${PAGE_MAX_W} mx-auto px-4 md:px-10 text-center`}>
             <h2
               className="display-serif text-white m-0 mb-4"
               style={{ fontSize: 'clamp(28px, 3vw, 40px)' }}

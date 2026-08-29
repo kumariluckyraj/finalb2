@@ -7,6 +7,9 @@ interface Category {
   img: string;
 }
 
+// Keep in sync with Navbar.tsx / page.tsx / HeroBanner.tsx / FeaturedProducts.tsx / TrustBadges.tsx
+const PAGE_MAX_W = "max-w-[1200px]";
+
 // Arrow icon for category cards
 const ArrowIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -25,13 +28,13 @@ export default function CategoryGrid({
   if (categories.length === 0) return null;
 
   return (
-    <section className="py-16 md:py-20 bg-white">
-      <div className="max-w-[1440px] mx-auto px-5 md:px-10">
+    <section className="py-10 md:py-14 bg-white">
+      <div className={`${PAGE_MAX_W} mx-auto px-4 md:px-10`}>
         {/* Section heading */}
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-10 gap-4">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-6 gap-4">
           <h2
             className="display-serif text-[#1a211e] m-0"
-            style={{ fontSize: 'clamp(32px, 4vw, 48px)' }}
+            style={{ fontSize: 'clamp(30px, 3.6vw, 44px)' }}
           >
             Explore our products —
           </h2>
@@ -53,13 +56,13 @@ export default function CategoryGrid({
               aria-label={`Shop ${cat.label}`}
               key={cat.id}
               onClick={() => onCategoryClick(cat.id)}
-              className="relative overflow-hidden rounded-lg aspect-[4/5] cursor-pointer group bg-[#eef1f0] border-none p-0 text-left"
+              className="relative overflow-hidden rounded-lg aspect-[4/3] cursor-pointer group bg-[#eef1f0] border-none p-0 text-left"
             >
               <Image
                 src={cat.img}
                 alt={cat.label}
                 fill
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 33vw"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 400px"
                 style={{ objectFit: "cover" }}
                 className="absolute inset-0 transition-transform duration-700 group-hover:scale-105"
               />
@@ -81,7 +84,7 @@ export default function CategoryGrid({
               aria-label={`Shop ${cat.label}`}
               key={cat.id}
               onClick={() => onCategoryClick(cat.id)}
-              className="relative overflow-hidden rounded-lg aspect-[16/9] cursor-pointer group bg-[#eef1f0] border-none p-0 text-left"
+              className="relative overflow-hidden rounded-lg aspect-[21/9] cursor-pointer group bg-[#eef1f0] border-none p-0 text-left"
             >
               <Image
                 src={cat.img}
@@ -110,13 +113,13 @@ export default function CategoryGrid({
                 aria-label={`Shop ${cat.label}`}
                 key={cat.id}
                 onClick={() => onCategoryClick(cat.id)}
-                className="relative overflow-hidden rounded-lg aspect-[4/5] cursor-pointer group bg-[#eef1f0] border-none p-0 text-left"
+                className="relative overflow-hidden rounded-lg aspect-[4/3] cursor-pointer group bg-[#eef1f0] border-none p-0 text-left"
               >
                 <Image
                   src={cat.img}
                   alt={cat.label}
                   fill
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 33vw"
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 400px"
                   style={{ objectFit: "cover" }}
                   className="absolute inset-0 transition-transform duration-700 group-hover:scale-105"
                 />

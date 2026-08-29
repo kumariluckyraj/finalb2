@@ -14,6 +14,9 @@ interface ProductData {
   brand?: string;
 }
 
+// Keep in sync with Navbar.tsx / page.tsx / HeroBanner.tsx / CategoryGrid.tsx / TrustBadges.tsx
+const PAGE_MAX_W = "max-w-[1200px]";
+
 const FILTER_CATEGORIES = [
   "All",
   "Fashion",
@@ -55,13 +58,13 @@ export default function FeaturedProducts({
   };
 
   return (
-    <section className="py-16 md:py-20">
-      <div className="max-w-[1440px] mx-auto px-5 md:px-10">
+    <section className="py-6 md:py-2">
+      <div className={`${PAGE_MAX_W} mx-auto px-4 md:px-10`}>
         {/* Section heading */}
         <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-8 gap-4">
           <h2
             className="display-serif text-[#1a211e] m-0"
-            style={{ fontSize: 'clamp(32px, 4vw, 48px)' }}
+            style={{ fontSize: 'clamp(30px, 3.6vw, 44px)' }}
           >
             Featured Products —
           </h2>
@@ -114,12 +117,12 @@ export default function FeaturedProducts({
           >
             {loading
               ? Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="min-w-[260px] w-[260px] shrink-0" style={{ scrollSnapAlign: 'start' }}>
+                  <div key={i} className="min-w-[240px] w-[240px] shrink-0" style={{ scrollSnapAlign: 'start' }}>
                     <ProductCardSkeleton />
                   </div>
                 ))
               : (filteredProducts.length > 0 ? filteredProducts : products).map((p) => (
-                  <div key={p._id} className="min-w-[260px] w-[260px] shrink-0" style={{ scrollSnapAlign: 'start' }}>
+                  <div key={p._id} className="min-w-[240px] w-[240px] shrink-0" style={{ scrollSnapAlign: 'start' }}>
                     <ProductCard
                       product={p}
                       onAddToCart={onAddToCart}

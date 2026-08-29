@@ -189,6 +189,11 @@ const DEFAULT_NAV_CATEGORIES = [
   "Fashion", "Mobiles", "Electronics", "Beauty", "Grocery", "Furniture", "Sports", "Books",
 ];
 
+// ─── Shared page container width ───────────────────────────────────────────
+// Kept as one constant string so every section (navbar, hero, grids, etc.)
+// stays in sync. Change PAGE_MAX_W in one place to resize the whole site.
+const PAGE_MAX_W = "max-w-[1200px]";
+
 // ─── Navbar ───────────────────────────────────────────────────────────────────
 
 interface NavbarProps {
@@ -359,6 +364,7 @@ export default function Navbar({
       <button onClick={() => { router.push("/compare"); setDropdownOpen(false); }} className="w-full bg-transparent border-none px-5 py-3 text-[14px] text-[#1a211e] cursor-pointer flex items-center gap-3 text-left hover:bg-[#eef1f0] transition-colors"> <Scale className="w-5 h-5 shrink-0" /> Compare</button>
       <button onClick={() => { router.push("/wallet"); setDropdownOpen(false); }} className="w-full bg-transparent border-none px-5 py-3 text-[14px] text-[#1a211e] cursor-pointer flex items-center gap-3 text-left hover:bg-[#eef1f0] transition-colors"> <SuperCoinIcon /> SuperCoins{coinBalance !== null && <span className="ml-auto text-[12px] text-[#1a211e] font-bold">{coinBalance}</span>}</button>
       <button onClick={() => { router.push("/settings"); setDropdownOpen(false); }} className="w-full bg-transparent border-none px-5 py-3 text-[14px] text-[#1a211e] cursor-pointer flex items-center gap-3 text-left hover:bg-[#eef1f0] transition-colors"> <Settings className="w-5 h-5 shrink-0" /> Account Settings</button>
+      <button onClick={() => { router.push("/account/affiliate"); setDropdownOpen(false); }} className="w-full bg-transparent border-none px-5 py-3 text-[14px] text-[#1a211e] cursor-pointer flex items-center gap-3 text-left hover:bg-[#eef1f0] transition-colors"> <Settings className="w-5 h-5 shrink-0" /> Affiliate</button>
       {(hasSellerProfile || user?.role === 'vendor') ? (
         sellerOnboardingCompleted ? (
           <button onClick={() => { const sd = process.env.NEXT_PUBLIC_SELLER_DOMAIN; if (sd) { window.location.href = window.location.protocol + '//' + sd; } else { router.push('/vendor/dashboard'); } setDropdownOpen(false); }} className="w-full bg-transparent border-none px-5 py-3 text-[14px] text-[#1a211e] cursor-pointer flex items-center gap-3 text-left hover:bg-[#eef1f0] transition-colors"> <Store className="w-5 h-5 shrink-0" /> Seller Dashboard</button>
@@ -455,7 +461,7 @@ export default function Navbar({
       {/* ── Buyer Navbar — Peak Design Style ─────────────────────────────── */}
       {/* Tier 1: Announcement Bar */}
       <div className="bg-[#1a211e] text-white text-center py-2 text-[12px] font-bold uppercase tracking-[0.1em] overflow-hidden">
-        <div className="max-w-[1440px] mx-auto px-3 md:px-8 flex items-center justify-between">
+        <div className={`${PAGE_MAX_W} mx-auto px-4 md:px-10 flex items-center justify-between`}>
           <span className="hidden md:inline text-[11px] font-normal tracking-[0.05em] opacity-70 cursor-pointer hover:opacity-100 transition-opacity whitespace-nowrap">Our Mission</span>
           <div className="flex-1 text-center whitespace-nowrap overflow-hidden text-ellipsis">
             <span className="text-[10px] md:text-[12px]">FREE DELIVERY</span>
@@ -470,7 +476,7 @@ export default function Navbar({
 
       {/* Tier 2: Primary Navigation */}
       <nav className="bg-white border-b border-[#e0e0e0]">
-        <div className="max-w-[1440px] mx-auto px-3 md:px-8 h-16 flex items-center gap-2 md:gap-4">
+        <div className={`${PAGE_MAX_W} mx-auto px-4 md:px-10 h-16 flex items-center gap-2 md:gap-4`}>
 
           {/* Mobile hamburger */}
           <button aria-label="Open Menu" aria-expanded={mobileMenuOpen} className="md:hidden bg-transparent border-none text-[#1a211e] cursor-pointer p-1 shrink-0" onClick={() => setMobileMenuOpen(true)}>
@@ -497,7 +503,7 @@ export default function Navbar({
 </div>
 
           {/* Search input */}
-          <div className="hidden md:block flex-1 max-w-[460px] ml-auto relative">
+          <div className="hidden md:block flex-1 max-w-[420px] ml-auto relative">
             <div className="flex h-10 rounded bg-[#eef1f0] border border-[#cccfcd] items-center overflow-hidden">
               {/* Category filter */}
               <div ref={catFilterRef} className="relative shrink-0 h-full">
@@ -597,7 +603,7 @@ export default function Navbar({
 
         {/* Desktop Category Strip — shown below nav on smaller screens */}
         <div className="hidden md:block xl:hidden border-t border-[#e0e0e0]">
-          <div className="max-w-[1440px] mx-auto px-5 py-2 flex gap-1 overflow-x-auto whitespace-nowrap scrollbar-hide">
+          <div className={`${PAGE_MAX_W} mx-auto px-4 md:px-10 py-2 flex gap-1 overflow-x-auto whitespace-nowrap scrollbar-hide`}>
             {categories.map(cat => (
               <button aria-label={`Category ${cat}`} key={cat} onClick={() => router.push(`/products/${cat.toLowerCase()}`)}
                 className="bg-transparent border-none text-[13px] font-bold text-[#363537] cursor-pointer py-1.5 px-3 uppercase tracking-[0.057em] transition-colors duration-200 hover:text-[#1a211e] shrink-0">

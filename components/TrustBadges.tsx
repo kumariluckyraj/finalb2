@@ -1,5 +1,8 @@
 "use client";
 
+// Keep in sync with Navbar.tsx / page.tsx / HeroBanner.tsx / CategoryGrid.tsx / FeaturedProducts.tsx
+const PAGE_MAX_W = "max-w-[1200px]";
+
 const VALUES = [
   {
     title: "Free Delivery",
@@ -21,11 +24,11 @@ const VALUES = [
 export default function TrustBadges() {
   return (
     <section className="py-16 md:py-24 bg-[#eef1f0]">
-      <div className="max-w-[1440px] mx-auto px-5 md:px-10">
+      <div className={`${PAGE_MAX_W} mx-auto px-4 md:px-10`}>
         {/* Section heading */}
         <h2
           className="display-serif text-[#1a211e] m-0 mb-12"
-          style={{ fontSize: 'clamp(32px, 4vw, 48px)' }}
+          style={{ fontSize: 'clamp(30px, 3.6vw, 44px)' }}
         >
           Why B2World —
         </h2>
